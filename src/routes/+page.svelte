@@ -25,11 +25,18 @@
 	import { videoUrl, fetchResolutionOptions, fmtSeconds } from '$lib/comfy';
 	import { queue, jobElapsed, MAX_BATCH } from '$lib/queue.svelte';
 	import { previewVideo } from '$lib/media';
+	import { computeResolution, RESOLUTION_MULTIPLE } from '$lib/resolution';
+	import Ruler from '@lucide/svelte/icons/ruler';
 	import VideoModal from '$lib/components/VideoModal.svelte';
 	import TestPattern from '$lib/components/TestPattern.svelte';
 
 	const host = $derived(settings.value.host);
 	const boss = $derived(bossMode.value);
+
+	/** 選択中の設定で生成される動画サイズ (ComfyUI の ResolutionSelector と同じ計算) */
+	const resolution = $derived(
+		computeResolution(params.value.aspectRatio, params.value.megapixels)
+	);
 
 	/** 同時に投入する本数 (ComfyUI の Batch Count 相当) */
 	let batchCount = $state(1);
@@ -192,15 +199,31 @@
 	);
 	const headElapsed = $derived(runningJob ? jobElapsed(runningJob, queue.now) : 0);
 
+	/** タブは幅が狭いので、タイトル用は最短表記にする */
+	const shortLabel = $derived(
+		submitting
+			? '送信中'
+			: runningJob?.state === 'queued'
+				? runningJob.position > 0
+					? `待機#${runningJob.position}`
+					: '待機'
+				: '生成中'
+	);
+	function shortSeconds(s: number): string {
+		if (s >= 60) return `${Math.floor(s / 60)}分${Math.round(s % 60)}秒`;
+		return `${Math.round(s)}秒`;
+	}
+
 	// ブラウザタブで進捗が分かるようにタイトルを動的に更新する
+	// 例: "12s 生成中", "3s 待機#2 3件", "完了 1分11秒", "エラー"
 	const tabTitle = $derived(
 		busy
-			? `⏳ ${headLabel}${activeJobs.length > 1 ? ` (残${activeJobs.length}件)` : ''} ${Math.floor(headElapsed)}s | MiniMax H3`
+			? `${Math.floor(headElapsed)}s ${shortLabel}${activeJobs.length > 1 ? ` ${activeJobs.length}件` : ''}`
 			: errorMsg
-				? '⚠️ 生成エラー | MiniMax H3'
+				? 'エラー'
 				: viewRecord
-					? `✅ 生成完了 (${fmtSeconds(viewRecord.seconds)}) | MiniMax H3`
-					: 'MiniMax H3 Studio'
+					? `完了 ${shortSeconds(viewRecord.seconds)}`
+					: 'MiniMax H3'
 	);
 </script>
 
@@ -263,9 +286,32 @@
 
 				<!-- アスペクト比 -->
 				<div>
-					<label class="mb-1.5 block text-xs font-medium text-mute" for="aspect">
-						アスペクト比
-					</label>
+					<div class="mb-1.5 flex items-center gap-2">
+						<label class="text-xs font-medium text-mute" for="aspect">アスペクト比</label>
+						{#if resolution}
+							<!-- 出力サイズはホバー(フォーカス)時だけポップアップで見せる -->
+							<span class="group relative">
+								<button
+									type="button"
+									class="flex items-center gap-1 rounded border border-edge px-1.5 py-0.5 font-mono text-[9px] text-faint transition-colors hover:border-amber/40 hover:text-amber focus-visible:border-amber/40 focus-visible:text-amber"
+									aria-label="生成される動画サイズを表示"
+								>
+									<Ruler size={9} />px
+								</button>
+								<span
+									class="pointer-events-none absolute bottom-full left-0 z-20 mb-1.5 hidden whitespace-nowrap rounded-lg border border-edge2 bg-panel px-2.5 py-1.5 shadow-xl shadow-black/50 group-hover:block group-focus-within:block"
+								>
+									<span class="block font-mono text-[13px] font-semibold text-ink">
+										{resolution.width} × {resolution.height}
+										<span class="text-[10px] font-normal text-faint">px</span>
+									</span>
+									<span class="mt-0.5 block font-mono text-[9px] text-faint">
+										{params.value.aspectRatio.split(' ')[0]} · {params.value.megapixels}MP · {RESOLUTION_MULTIPLE}の倍数
+									</span>
+								</span>
+							</span>
+						{/if}
+					</div>
 					<select id="aspect" class="field-input" bind:value={params.value.aspectRatio}>
 						{#each aspectOptions as opt (opt)}
 							<option value={opt}>{opt}</option>
@@ -386,26 +432,29 @@
 					</div>
 				</div>
 
-				<!-- 生成ボタン (実行中でも追加投入できる) -->
-				<button
-					class="group flex items-center justify-center gap-2 rounded-xl bg-amber py-3 text-sm font-bold text-black shadow-[0_0_24px_rgb(255_178_36/0.25)] transition-all hover:bg-amber/90 hover:shadow-[0_0_32px_rgb(255_178_36/0.4)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-					onclick={generate}
-					disabled={!params.value.prompt.trim() || submitting}
+				<!-- 生成ボタン: スクロールしても常に見えるようペイン下部に固定 -->
+				<div
+					class="sticky bottom-0 -mx-5 -mb-5 flex flex-col gap-2 border-t border-edge bg-panel/95 px-5 pt-3 pb-4 backdrop-blur"
 				>
-					<Sparkles size={16} class="transition-transform group-hover:rotate-12" />
-					{submitting
-						? '送信中…'
-						: batchCount > 1
-							? `${batchCount}件をキューに追加`
-							: activeJobs.length > 0
-								? 'キューに追加'
-								: '動画を生成'}
-				</button>
-
-				{#if activeJobs.length > 0}
-					<div
-						class="flex items-center gap-2 rounded-xl border border-edge bg-well/60 px-3 py-2 text-[11px]"
+					<button
+						class="group flex items-center justify-center gap-2 rounded-xl bg-amber py-3 text-sm font-bold text-black shadow-[0_0_24px_rgb(255_178_36/0.25)] transition-all hover:bg-amber/90 hover:shadow-[0_0_32px_rgb(255_178_36/0.4)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+						onclick={generate}
+						disabled={!params.value.prompt.trim() || submitting}
 					>
+						<Sparkles size={16} class="transition-transform group-hover:rotate-12" />
+						{submitting
+							? '送信中…'
+							: batchCount > 1
+								? `${batchCount}件をキューに追加`
+								: activeJobs.length > 0
+									? 'キューに追加'
+									: '動画を生成'}
+					</button>
+
+					{#if activeJobs.length > 0}
+						<div
+							class="flex items-center gap-2 rounded-xl border border-edge bg-well/60 px-3 py-2 text-[11px]"
+						>
 						<span class="rec-dot inline-block size-2 shrink-0 rounded-full bg-rec"></span>
 						<span class="text-mute">
 							<span class="font-mono text-ink">{activeJobs.length}</span> 件実行中
@@ -415,30 +464,31 @@
 								</span>
 							{/if}
 						</span>
-						<button
-							class="ml-auto flex items-center gap-1 rounded-lg border border-rec/30 px-2 py-1 font-medium text-rec transition-colors hover:bg-rec/10"
-							onclick={cancelAll}
-						>
-							<CircleStop size={12} />全キャンセル
-						</button>
-					</div>
-				{/if}
+							<button
+								class="ml-auto flex items-center gap-1 rounded-lg border border-rec/30 px-2 py-1 font-medium text-rec transition-colors hover:bg-rec/10"
+								onclick={cancelAll}
+							>
+								<CircleStop size={12} />全キャンセル
+							</button>
+						</div>
+					{/if}
 
-				{#if errorMsg}
-					<div
-						class="fade-up flex items-start gap-2 rounded-lg border border-rec/30 bg-rec/10 p-3 text-xs leading-relaxed text-rec"
-					>
-						<TriangleAlert size={14} class="mt-0.5 shrink-0" />
-						<span class="min-w-0 flex-1 break-all">{errorMsg}</span>
-						<button
-							class="shrink-0 rounded p-0.5 transition-colors hover:bg-rec/20"
-							onclick={() => (queue.error = '')}
-							title="閉じる"
+					{#if errorMsg}
+						<div
+							class="fade-up flex items-start gap-2 rounded-lg border border-rec/30 bg-rec/10 p-3 text-xs leading-relaxed text-rec"
 						>
-							<X size={13} />
-						</button>
-					</div>
-				{/if}
+							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+							<span class="min-w-0 flex-1 break-all">{errorMsg}</span>
+							<button
+								class="shrink-0 rounded p-0.5 transition-colors hover:bg-rec/20"
+								onclick={() => (queue.error = '')}
+								title="閉じる"
+							>
+								<X size={13} />
+							</button>
+						</div>
+					{/if}
+				</div>
 			</div>
 		</section>
 
