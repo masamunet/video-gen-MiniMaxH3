@@ -102,7 +102,6 @@ export function videoUrl(host: string, file: VideoFile, download = false): strin
 
 export interface ResolutionOptions {
 	aspectRatios: string[];
-	megapixels: { choices: number[] | null; min: number; max: number; step: number };
 	fromServer: boolean;
 }
 
@@ -126,24 +125,9 @@ export async function fetchResolutionOptions(host: string): Promise<ResolutionOp
 				aspectRatios = ar[1].options.map(String);
 		}
 
-		let choices: number[] | null = null;
-		let min = 0.1,
-			max = 16,
-			step = 0.1;
-		const mp = required.megapixels;
-		if (Array.isArray(mp)) {
-			if (Array.isArray(mp[0]) && mp[0].every((v: unknown) => !isNaN(Number(v)))) {
-				choices = mp[0].map(Number);
-			} else if (typeof mp[1] === 'object' && mp[1] !== null) {
-				const cfg = mp[1] as Record<string, number>;
-				if (cfg.min != null) min = cfg.min;
-				if (cfg.max != null) max = cfg.max;
-				if (cfg.step != null) step = cfg.step;
-			}
-		}
-
+		// メガピクセルはアプリ側で実用域 (0.1〜2.0) に固定しているため取得しない
 		if (aspectRatios.length === 0) return null;
-		return { aspectRatios, megapixels: { choices, min, max, step }, fromServer: true };
+		return { aspectRatios, fromServer: true };
 	} catch {
 		return null;
 	}

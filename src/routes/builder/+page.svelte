@@ -283,7 +283,8 @@
 
 <svelte:window onpointermove={onDrag} onpointerup={endDrag} />
 
-<main class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto]">
+<!-- 列を minmax(0,1fr) で固定しないと、レシピが増えたときにグリッドごと横に広がってページに横スクロールが出る -->
+<main class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
 	<div class="grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(360px,42%)]">
 		<!-- ══════════ 左: 構成入力 ══════════ -->
 		<section class="flex min-h-0 flex-col overflow-y-auto border-r border-edge bg-panel/40">
@@ -572,7 +573,7 @@
 	</div>
 
 	<!-- ══════════ 下: レシピ一覧 ══════════ -->
-	<footer class="shrink-0 border-t border-edge bg-panel/60">
+	<footer class="min-w-0 shrink-0 border-t border-edge bg-panel/60">
 		<div class="flex items-center gap-2 px-5 pt-2.5 pb-1.5">
 			<BookMarked size={12} class="text-faint" />
 			<span class="font-mono text-[10px] font-semibold tracking-[0.25em] text-faint uppercase">

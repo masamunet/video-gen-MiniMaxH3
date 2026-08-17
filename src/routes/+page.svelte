@@ -55,21 +55,26 @@
 
 	// ── 選択肢を ComfyUI 本体から取得(API JSONと必ず一致させる) ──
 	let aspectOptions = $state<string[]>(FALLBACK_ASPECT_RATIOS);
-	let mpChoices = $state<number[] | null>(null);
-	let mpRange = $state({ min: 0.1, max: 4, step: 0.05 });
 	let optsFromServer = $state(false);
+	// メガピクセルは実用域に固定 (ComfyUI 側の広い定義域はそのままだと使いにくい)
+	const MP_RANGE = { min: 0.1, max: 2, step: 0.1 };
+
+	// 旧設定で範囲外の値が保存されている場合に備えて丸める
+	$effect(() => {
+		const p = params.value;
+		const mp = Math.min(MP_RANGE.max, Math.max(MP_RANGE.min, Math.round(p.megapixels * 10) / 10));
+		const duration = Math.min(20, Math.max(5, Math.round(p.duration)));
+		const steps = Math.min(35, Math.max(4, Math.round(p.steps)));
+		if (mp !== p.megapixels || duration !== p.duration || steps !== p.steps) {
+			params.value = { ...p, megapixels: mp, duration, steps };
+		}
+	});
 
 	$effect(() => {
 		const h = host;
 		fetchResolutionOptions(h).then((opts) => {
 			if (!opts) return;
 			aspectOptions = opts.aspectRatios;
-			mpChoices = opts.megapixels.choices;
-			mpRange = {
-				min: opts.megapixels.min,
-				max: opts.megapixels.max,
-				step: opts.megapixels.step
-			};
 			optsFromServer = true;
 			if (!opts.aspectRatios.includes(params.value.aspectRatio)) {
 				params.value = { ...params.value, aspectRatio: opts.aspectRatios[0] };
@@ -235,7 +240,8 @@
 	<title>{tabTitle}</title>
 </svelte:head>
 
-<main class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto]">
+<!-- 列を minmax(0,1fr) で固定しないと、履歴が増えたときにグリッドごと横に広がってページに横スクロールが出る -->
+<main class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
 	<div class="grid min-h-0 grid-cols-[400px_minmax(0,1fr)]">
 		<!-- ══════════ 左: 入力 ══════════ -->
 		<section class="flex min-h-0 flex-col overflow-y-auto border-r border-edge bg-panel/40">
@@ -287,34 +293,26 @@
 						メガピクセル
 						<span class="ml-1 font-mono text-amber">{params.value.megapixels}</span>
 					</label>
-					{#if mpChoices}
-						<select id="mp" class="field-input" bind:value={params.value.megapixels}>
-							{#each mpChoices as c (c)}
-								<option value={c}>{c} MP</option>
-							{/each}
-						</select>
-					{:else}
-						<div class="flex items-center gap-3">
-							<input
-								id="mp"
-								type="range"
-								class="fader flex-1"
-								min={mpRange.min}
-								max={mpRange.max}
-								step={mpRange.step}
-								bind:value={params.value.megapixels}
-								style={fill(params.value.megapixels, mpRange.min, mpRange.max)}
-							/>
-							<input
-								type="number"
-								class="field-input w-20 text-center font-mono text-xs"
-								min={mpRange.min}
-								max={mpRange.max}
-								step={mpRange.step}
-								bind:value={params.value.megapixels}
-							/>
-						</div>
-					{/if}
+					<div class="flex items-center gap-3">
+						<input
+							id="mp"
+							type="range"
+							class="fader flex-1"
+							min={MP_RANGE.min}
+							max={MP_RANGE.max}
+							step={MP_RANGE.step}
+							bind:value={params.value.megapixels}
+							style={fill(params.value.megapixels, MP_RANGE.min, MP_RANGE.max)}
+						/>
+						<input
+							type="number"
+							class="field-input w-20 text-center font-mono text-xs"
+							min={MP_RANGE.min}
+							max={MP_RANGE.max}
+							step={MP_RANGE.step}
+							bind:value={params.value.megapixels}
+						/>
+					</div>
 				</div>
 
 				<!-- duration / steps -->
@@ -340,6 +338,7 @@
 								class="field-input w-14 px-1 text-center font-mono text-xs"
 								min="5"
 								max="20"
+								step="1"
 								bind:value={params.value.duration}
 							/>
 						</div>
@@ -354,17 +353,18 @@
 								id="steps"
 								type="range"
 								class="fader flex-1"
-								min="1"
-								max="20"
+								min="4"
+								max="35"
 								step="1"
 								bind:value={params.value.steps}
-								style={fill(params.value.steps, 1, 20)}
+								style={fill(params.value.steps, 4, 35)}
 							/>
 							<input
 								type="number"
 								class="field-input w-14 px-1 text-center font-mono text-xs"
-								min="1"
-								max="100"
+								min="4"
+								max="35"
+								step="1"
 								bind:value={params.value.steps}
 							/>
 						</div>
@@ -552,7 +552,7 @@
 	</div>
 
 	<!-- ══════════ 下: 履歴 ══════════ -->
-	<footer class="shrink-0 border-t border-edge bg-panel/60">
+	<footer class="min-w-0 shrink-0 border-t border-edge bg-panel/60">
 		<div class="flex items-center gap-2 px-5 pt-2.5 pb-1.5">
 			<History size={12} class="text-faint" />
 			<span class="font-mono text-[10px] font-semibold tracking-[0.25em] text-faint uppercase">
