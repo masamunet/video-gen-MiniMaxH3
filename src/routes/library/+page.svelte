@@ -82,7 +82,7 @@
 							{:else if rec.video}
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
-									class="size-full object-cover opacity-85 transition-all group-hover:scale-[1.02] group-hover:opacity-100"
+									class="size-full object-contain opacity-85 transition-all group-hover:scale-[1.02] group-hover:opacity-100"
 									src={videoUrl(host, rec.video)}
 									preload="metadata"
 									muted

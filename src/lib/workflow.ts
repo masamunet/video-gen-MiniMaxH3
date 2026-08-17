@@ -197,6 +197,8 @@ const TEMPLATE = {
 		_meta: { title: 'Float (duration)' }
 	},
 	'105:127': {
+		// 元の API JSON では model が 105:6 (素の UNET) 直結で turbo LoRA (105:128) が
+		// 未接続だったが、少ステップ生成の画質確保のため LoRA を経由させる
 		inputs: {
 			enabled: false,
 			blend_weight: 0.5,
@@ -215,7 +217,7 @@ const TEMPLATE = {
 			offline_smoothing_replay: true,
 			audio_blend_weight: 0,
 			offline_archive_storage: 'system_ram',
-			model: ['105:6', 0]
+			model: ['105:128', 0]
 		},
 		class_type: 'SpectrumApplyMiniMaxH3',
 		_meta: { title: 'Spectrum Apply MiniMax H3' }

@@ -447,14 +447,13 @@
 					<div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-5">
 						{#if viewRecord.video && boss}
 							<!-- ボスが来たモード: 動画の代わりに試験パターン -->
-							<div
-								class="aspect-video max-h-full w-full max-w-xl overflow-hidden rounded-xl border border-edge"
-							>
+							<div class="h-full w-full overflow-hidden rounded-xl border border-edge">
 								<TestPattern />
 							</div>
 						{:else if viewRecord.video}
+							<!-- ボタンをペイン実寸いっぱいに広げ、縦長/横長どちらも確実に内接させる -->
 							<button
-								class="group relative flex max-h-full min-h-0 max-w-full items-center justify-center"
+								class="group relative flex h-full w-full items-center justify-center"
 								onclick={() => (modalOpen = true)}
 								title="モーダルで再生"
 							>
@@ -467,7 +466,7 @@
 									playsinline
 								></video>
 								<span
-									class="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 opacity-0 transition-all group-hover:bg-black/40 group-hover:opacity-100"
+									class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
 								>
 									<span class="rounded-full bg-amber p-4 text-black shadow-xl">
 										<Play size={22} fill="currentColor" />
@@ -584,7 +583,7 @@
 							{:else if rec.video}
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
-									class="size-full object-cover opacity-80 transition-opacity group-hover:opacity-100"
+									class="size-full object-contain opacity-80 transition-opacity group-hover:opacity-100"
 									src={videoUrl(host, rec.video)}
 									preload="metadata"
 									muted

@@ -2,6 +2,7 @@
 	import { Dialog } from 'bits-ui';
 	import X from '@lucide/svelte/icons/x';
 	import Download from '@lucide/svelte/icons/download';
+	import Maximize from '@lucide/svelte/icons/maximize';
 	import Timer from '@lucide/svelte/icons/timer';
 	import { settings, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import TestPattern from './TestPattern.svelte';
@@ -13,13 +14,27 @@
 	}: { open?: boolean; record: HistoryRecord | null } = $props();
 
 	const host = $derived(settings.value.host);
+
+	let videoEl = $state<HTMLVideoElement | null>(null);
+
+	function fullscreen() {
+		// Safari 用のプレフィックス付き API にもフォールバック
+		const el = videoEl as
+			| (HTMLVideoElement & {
+					webkitRequestFullscreen?: () => void;
+					webkitEnterFullscreen?: () => void;
+			  })
+			| null;
+		if (!el) return;
+		(el.requestFullscreen ?? el.webkitRequestFullscreen ?? el.webkitEnterFullscreen)?.call(el);
+	}
 </script>
 
 <Dialog.Root bind:open>
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/85 backdrop-blur-md" />
 		<Dialog.Content
-			class="fade-up fixed top-1/2 left-1/2 z-50 flex max-h-[92dvh] w-[min(1100px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-edge bg-panel shadow-2xl shadow-black/70"
+			class="fade-up fixed top-1/2 left-1/2 z-50 flex h-[92dvh] w-[min(1100px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-edge bg-panel shadow-2xl shadow-black/70"
 		>
 			{#if record}
 				<div class="flex items-center justify-between gap-4 border-b border-edge px-4 py-2.5">
@@ -31,6 +46,15 @@
 							<span class="flex items-center gap-1 font-mono text-[11px] text-mute">
 								<Timer size={12} class="text-amber" />{fmtSeconds(record.seconds)}
 							</span>
+						{/if}
+						{#if record.video && !bossMode.value}
+							<button
+								class="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-[11px] font-medium text-mute transition-colors hover:border-edge2 hover:text-ink"
+								onclick={fullscreen}
+								title="全画面で再生"
+							>
+								<Maximize size={13} />全画面
+							</button>
 						{/if}
 						{#if record.video}
 							<a
@@ -57,6 +81,7 @@
 					{:else if record.video}
 						<!-- svelte-ignore a11y_media_has_caption -->
 						<video
+							bind:this={videoEl}
 							class="max-h-full max-w-full rounded-md object-contain"
 							src={videoUrl(host, record.video)}
 							controls
