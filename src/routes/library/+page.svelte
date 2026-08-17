@@ -3,11 +3,13 @@
 	import Play from '@lucide/svelte/icons/play';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Search from '@lucide/svelte/icons/search';
-	import { settings, history, type HistoryRecord } from '$lib/stores.svelte';
+	import { settings, history, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
 	import VideoModal from '$lib/components/VideoModal.svelte';
+	import TestPattern from '$lib/components/TestPattern.svelte';
 
 	const host = $derived(settings.value.host);
+	const boss = $derived(bossMode.value);
 
 	let query = $state('');
 	let modalOpen = $state(false);
@@ -75,7 +77,9 @@
 						tabindex="0"
 					>
 						<div class="relative aspect-video overflow-hidden bg-well">
-							{#if rec.video}
+							{#if boss}
+								<TestPattern compact />
+							{:else if rec.video}
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
 									class="size-full object-cover opacity-85 transition-all group-hover:scale-[1.02] group-hover:opacity-100"

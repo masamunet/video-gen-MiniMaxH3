@@ -76,6 +76,12 @@ export const pending = new Persisted<PendingJob | null>('vg:pending', null);
 export const builder = new Persisted<BuilderData>('vg:builder', DEFAULT_BUILDER);
 if (browser) builder.value = normalizeBuilder(builder.value);
 
+/**
+ * ボスが来たモード。ON の間はすべての動画をグレーのプレースホルダーで表示する。
+ * ロゴクリックで ON、メニューの「生成」クリックで OFF (リロードしても維持)。
+ */
+export const bossMode = new Persisted<boolean>('vg:boss', false);
+
 /** 生成履歴。サーバー側の SQLite (/api/history) に保存する */
 class HistoryStore {
 	value = $state<HistoryRecord[]>([]);

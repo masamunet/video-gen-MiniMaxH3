@@ -3,7 +3,8 @@
 	import X from '@lucide/svelte/icons/x';
 	import Download from '@lucide/svelte/icons/download';
 	import Timer from '@lucide/svelte/icons/timer';
-	import { settings, type HistoryRecord } from '$lib/stores.svelte';
+	import { settings, bossMode, type HistoryRecord } from '$lib/stores.svelte';
+	import TestPattern from './TestPattern.svelte';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
 
 	let {
@@ -48,11 +49,15 @@
 					</div>
 				</div>
 
-				<div class="flex min-h-0 flex-1 items-center justify-center bg-black/50 p-3">
-					{#if record.video}
+				<div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/50 p-3">
+					{#if bossMode.value}
+						<div class="aspect-video max-h-full w-full overflow-hidden rounded-md">
+							<TestPattern />
+						</div>
+					{:else if record.video}
 						<!-- svelte-ignore a11y_media_has_caption -->
 						<video
-							class="max-h-[70dvh] max-w-full rounded-md object-contain"
+							class="max-h-full max-w-full rounded-md object-contain"
 							src={videoUrl(host, record.video)}
 							controls
 							autoplay
@@ -63,7 +68,7 @@
 					{/if}
 				</div>
 
-				<div class="grid shrink-0 gap-2 border-t border-edge px-4 py-3 text-xs">
+				<div class="grid max-h-[30dvh] shrink-0 gap-2 overflow-y-auto border-t border-edge px-4 py-3 text-xs">
 					{#if record.jpPrompt}
 						<div>
 							<span class="mr-2 font-mono text-[10px] tracking-widest text-amber uppercase">JP</span>

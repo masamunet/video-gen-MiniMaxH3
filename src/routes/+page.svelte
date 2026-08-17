@@ -12,7 +12,8 @@
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import History from '@lucide/svelte/icons/history';
 
-	import { settings, params, history, pending, type HistoryRecord } from '$lib/stores.svelte';
+	import { settings, params, history, pending, bossMode, type HistoryRecord } from '$lib/stores.svelte';
+	import { copyText } from '$lib/compat';
 	import { buildWorkflow, FALLBACK_ASPECT_RATIOS, type GenParams } from '$lib/workflow';
 	import {
 		submitWorkflow,
@@ -24,10 +25,12 @@
 		fmtSeconds
 	} from '$lib/comfy';
 	import VideoModal from '$lib/components/VideoModal.svelte';
+	import TestPattern from '$lib/components/TestPattern.svelte';
 
 	type Phase = 'idle' | 'submitting' | 'queued' | 'running' | 'done' | 'error';
 
 	const host = $derived(settings.value.host);
+	const boss = $derived(bossMode.value);
 
 	let phase = $state<Phase>('idle');
 	let queuePos = $state(0);
@@ -188,9 +191,10 @@
 
 	async function copyJp() {
 		if (!viewRecord?.jpPrompt) return;
-		await navigator.clipboard.writeText(viewRecord.jpPrompt);
-		copied = true;
-		setTimeout(() => (copied = false), 1500);
+		if (await copyText(viewRecord.jpPrompt)) {
+			copied = true;
+			setTimeout(() => (copied = false), 1500);
+		}
 	}
 
 	function fill(v: number, min: number, max: number) {
@@ -214,7 +218,22 @@
 					: 'キュー待ち'
 				: '生成中'
 	);
+
+	// ブラウザタブで進捗が分かるようにタイトルを動的に更新する
+	const tabTitle = $derived(
+		busy
+			? `⏳ ${phaseLabel} ${Math.floor(elapsed)}s | MiniMax H3`
+			: phase === 'done'
+				? `✅ 生成完了 (${fmtSeconds(viewRecord?.seconds ?? 0)}) | MiniMax H3`
+				: phase === 'error'
+					? '⚠️ 生成エラー | MiniMax H3'
+					: 'MiniMax H3 Studio'
+	);
 </script>
+
+<svelte:head>
+	<title>{tabTitle}</title>
+</svelte:head>
 
 <main class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto]">
 	<div class="grid min-h-0 grid-cols-[400px_minmax(0,1fr)]">
@@ -310,17 +329,17 @@
 								id="duration"
 								type="range"
 								class="fader flex-1"
-								min="1"
-								max="15"
+								min="5"
+								max="20"
 								step="1"
 								bind:value={params.value.duration}
-								style={fill(params.value.duration, 1, 15)}
+								style={fill(params.value.duration, 5, 20)}
 							/>
 							<input
 								type="number"
 								class="field-input w-14 px-1 text-center font-mono text-xs"
-								min="1"
-								max="60"
+								min="5"
+								max="20"
 								bind:value={params.value.duration}
 							/>
 						</div>
@@ -425,16 +444,23 @@
 					</div>
 				{:else if viewRecord}
 					<!-- 結果表示 -->
-					<div class="flex min-h-0 flex-1 items-center justify-center p-5">
-						{#if viewRecord.video}
+					<div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-5">
+						{#if viewRecord.video && boss}
+							<!-- ボスが来たモード: 動画の代わりに試験パターン -->
+							<div
+								class="aspect-video max-h-full w-full max-w-xl overflow-hidden rounded-xl border border-edge"
+							>
+								<TestPattern />
+							</div>
+						{:else if viewRecord.video}
 							<button
-								class="group relative flex max-h-full max-w-full items-center justify-center"
+								class="group relative flex max-h-full min-h-0 max-w-full items-center justify-center"
 								onclick={() => (modalOpen = true)}
 								title="モーダルで再生"
 							>
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
-									class="max-h-[calc(100dvh-22rem)] max-w-full rounded-xl border border-edge object-contain shadow-2xl shadow-black/50"
+									class="max-h-full max-w-full rounded-xl border border-edge object-contain shadow-2xl shadow-black/50"
 									src={videoUrl(host, viewRecord.video)}
 									preload="metadata"
 									muted
@@ -453,8 +479,10 @@
 						{/if}
 					</div>
 
-					<!-- プロンプト情報 -->
-					<div class="shrink-0 space-y-2 border-t border-edge bg-panel/40 px-5 py-3">
+					<!-- プロンプト情報 (長文でも動画の表示領域を潰さないよう高さを制限) -->
+					<div
+						class="max-h-[45%] shrink-0 space-y-2 overflow-y-auto border-t border-edge bg-panel/40 px-5 py-3"
+					>
 						<div class="flex items-start gap-2">
 							<span
 								class="mt-0.5 shrink-0 rounded border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-widest text-amber"
@@ -551,7 +579,9 @@
 						title={rec.jpPrompt || rec.params.prompt}
 					>
 						<div class="relative h-20 overflow-hidden bg-well">
-							{#if rec.video}
+							{#if boss}
+								<TestPattern compact />
+							{:else if rec.video}
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
 									class="size-full object-cover opacity-80 transition-opacity group-hover:opacity-100"
@@ -565,11 +595,13 @@
 									<Clapperboard size={18} />
 								</div>
 							{/if}
-							<span
-								class="absolute right-1 bottom-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-amber"
-							>
-								{fmtSeconds(rec.seconds)}
-							</span>
+							{#if !boss}
+								<span
+									class="absolute right-1 bottom-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-amber"
+								>
+									{fmtSeconds(rec.seconds)}
+								</span>
+							{/if}
 						</div>
 						<div class="px-2.5 py-1.5">
 							<p class="truncate text-[11px] text-ink/85">

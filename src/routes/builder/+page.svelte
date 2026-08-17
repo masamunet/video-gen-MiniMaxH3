@@ -23,6 +23,7 @@
 	import { Dialog } from 'bits-ui';
 
 	import { builder, params } from '$lib/stores.svelte';
+	import { copyText, randomId } from '$lib/compat';
 	import {
 		buildPrompt,
 		formatTimestamp,
@@ -121,9 +122,10 @@
 
 	async function copyPrompt() {
 		if (!preview) return;
-		await navigator.clipboard.writeText(preview);
-		copied = true;
-		setTimeout(() => (copied = false), 1500);
+		if (await copyText(preview)) {
+			copied = true;
+			setTimeout(() => (copied = false), 1500);
+		}
 	}
 
 	function sendToGenerate() {
@@ -202,7 +204,7 @@
 
 		const existing = !asNew && editingId ? recipes.find((r) => r.id === editingId) : undefined;
 		const rec: Recipe = {
-			id: existing?.id ?? crypto.randomUUID(),
+			id: existing?.id ?? randomId(),
 			name: saveName.trim() || '無題レシピ',
 			data: $state.snapshot(builder.value),
 			rating: saveRating,
@@ -310,8 +312,8 @@
 					<input
 						type="number"
 						class="field-input w-16 px-1 py-1 text-center font-mono text-xs"
-						min="1"
-						max="60"
+						min="5"
+						max="20"
 						bind:value={builder.value.duration}
 					/>
 					<span class="text-faint">秒</span>

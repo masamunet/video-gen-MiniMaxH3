@@ -23,13 +23,43 @@ SvelteKit (Svelte 5 runes) + Tailwind CSS v4 + bits-ui + Lucide アイコンで�
 - 動画はビューポートに収まる表示。クリックでモーダル再生、ダウンロードボタン付き
 - ⌘+Enter で生成、実行中は中断可能（キュー待ち順表示付き）
 - ComfyUI ホストは設定ダイアログで変更可能（既定: `http://localhost:8000/`）
+- **ボスが来たモード**: 左上のロゴをクリックすると ON になり、すべての動画 (出力・履歴・ライブラリ・モーダル) がグレーのプレースホルダーになる。メニューの「生成」をクリックすると OFF。リロードしても状態は維持される
 
-## 起動
+## 起動 (開発)
 
 ```sh
 npm install
 npm run dev
 ```
+
+http://localhost:5173 で開く。DB は `data/dev.sqlite` が使われる。
+
+## 本番環境のビルドと実行
+
+[adapter-node](https://svelte.dev/docs/kit/adapter-node) でビルドし、Node サーバーとして実行する。
+
+```sh
+npm ci
+npm run build
+node build
+```
+
+http://localhost:3000 で起動する (`Listening on http://0.0.0.0:3000`)。
+
+- **DB は `data/prod.sqlite`** が自動的に使われる (開発の `dev.sqlite` とは完全分離。
+  初回起動時に自動作成される)。⚠️ 本番 DB には機密情報が載るため AI に読ませないこと
+- 環境変数:
+  - `PORT` — 待ち受けポート (既定 3000)。例: `PORT=8080 node build`
+  - `HOST` — バインドアドレス (既定 0.0.0.0)
+  - `VIDEO_GEN_DB_PATH` — DB ファイルパスの明示指定 (別ディレクトリから起動する場合は
+    絶対パス推奨。未指定時は **カレントディレクトリ**の `data/` に作られるため、
+    必ずプロジェクトルートから `node build` を実行すること)
+  - `ORIGIN` — リバースプロキシ配下などで公開 URL が異なる場合に指定
+    (例: `ORIGIN=http://192.168.1.10:3000`)
+- 実行時にも `node_modules` が必要 (better-sqlite3 のネイティブモジュールのため、
+  `build/` ディレクトリ単体では動かない)。別マシンへ配置する場合はプロジェクト一式を
+  コピーして `npm ci --omit=dev` を実行する
+- コード更新時は `git pull && npm ci && npm run build` して `node build` を再起動
 
 ComfyUI 側には次のカスタムノードが必要:
 ResolutionSelector / DPRandomGenerator / GFDeepTranslate / M_ShowText / RestoreDialogTags / SpectrumApplyMiniMaxH3 ほか（ワークフロー JSON 参照）。
