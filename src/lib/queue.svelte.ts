@@ -73,22 +73,28 @@ class QueueStore {
 
 	/** params の内容で count 件をキューに積む。戻り値は投入できた件数 */
 	async submit(params: GenParams, count: number): Promise<number> {
-		const target = targetFromSettings(settings.value);
 		const n = Math.min(Math.max(1, Math.floor(count)), MAX_BATCH);
+		return this.submitList(Array.from({ length: n }, () => params));
+	}
+
+	/** 複数の params (デッキ抽選の結果など) をまとめてキューに積む */
+	async submitList(list: GenParams[]): Promise<number> {
+		const target = targetFromSettings(settings.value);
+		const items = list.slice(0, MAX_BATCH);
 		this.error = '';
 		this.batch = [];
 		let queued = 0;
 
-		for (let i = 0; i < n; i++) {
+		for (let i = 0; i < items.length; i++) {
 			// buildWorkflow はノイズシードとランダムプロンプトのシードを毎回振り直す
-			const res = await submitWorkflow(target, buildWorkflow(params));
+			const res = await submitWorkflow(target, buildWorkflow(items[i]));
 			if (res.error || !res.prompt_id) {
 				this.error = res.error ?? '送信に失敗しました';
 				break;
 			}
 			const job: QueueJob = {
 				id: res.prompt_id,
-				params,
+				params: items[i],
 				startedAt: Date.now(),
 				backend: target.backend,
 				endpointId: target.endpointId,
@@ -96,7 +102,7 @@ class QueueStore {
 				state: 'queued',
 				position: 0,
 				index: i + 1,
-				total: n
+				total: items.length
 			};
 			jobs.value = [...jobs.value, job];
 			queued++;

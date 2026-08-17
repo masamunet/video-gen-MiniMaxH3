@@ -57,6 +57,14 @@ db.exec(`
 		updatedAt INTEGER NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_recipes_updated ON recipes(favorite DESC, updatedAt DESC);
+	CREATE TABLE IF NOT EXISTS decks (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		data TEXT NOT NULL,
+		createdAt INTEGER NOT NULL,
+		updatedAt INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_decks_updated ON decks(updatedAt DESC);
 `);
 
 // 既存 DB (backend / execSeconds を持たない頃のもの) にカラムを足す
@@ -128,4 +136,32 @@ export function upsertRecipe(row: RecipeRow): void {
 
 export function deleteRecipe(id: string): void {
 	recipeDelete.run(id);
+}
+
+/** 保存済みデッキ (data は DeckCard[] の JSON) */
+export interface DeckRow {
+	id: string;
+	name: string;
+	data: string;
+	createdAt: number;
+	updatedAt: number;
+}
+
+const deckUpsert = db.prepare(`
+	INSERT OR REPLACE INTO decks (id, name, data, createdAt, updatedAt)
+	VALUES (@id, @name, @data, @createdAt, @updatedAt)
+`);
+const deckList = db.prepare('SELECT * FROM decks ORDER BY updatedAt DESC');
+const deckDelete = db.prepare('DELETE FROM decks WHERE id = ?');
+
+export function listDecks(): DeckRow[] {
+	return deckList.all() as DeckRow[];
+}
+
+export function upsertDeck(row: DeckRow): void {
+	deckUpsert.run(row);
+}
+
+export function deleteDeck(id: string): void {
+	deckDelete.run(id);
 }

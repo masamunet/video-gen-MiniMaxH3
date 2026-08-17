@@ -13,12 +13,27 @@
 	import History from '@lucide/svelte/icons/history';
 	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
 	import ListVideo from '@lucide/svelte/icons/list-video';
+	import Layers from '@lucide/svelte/icons/layers';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Clock from '@lucide/svelte/icons/clock';
 	import X from '@lucide/svelte/icons/x';
 
-	import { settings, params, history, bossMode, type HistoryRecord } from '$lib/stores.svelte';
+	import {
+		settings,
+		params,
+		history,
+		deck,
+		bossMode,
+		type HistoryRecord,
+		type SavedDeck
+	} from '$lib/stores.svelte';
+	import { Dialog } from 'bits-ui';
+	import Save from '@lucide/svelte/icons/save';
+	import CopyPlus from '@lucide/svelte/icons/copy-plus';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import { aliveCards, appearanceRate, drawParams } from '$lib/deck';
+	import { randomId } from '$lib/compat';
 	import { copyText } from '$lib/compat';
 	import { billableSeconds, fmtCost } from '$lib/cost';
 	import { FALLBACK_ASPECT_RATIOS } from '$lib/workflow';
@@ -149,6 +164,150 @@
 
 	const cancelAll = () => queue.cancelAll();
 
+	// ── デッキ (入力設定をカードとして溜め、重み付き抽選で実行する) ──
+	let deckAdded = $state(false);
+	let deckAddedTimer: ReturnType<typeof setTimeout> | undefined;
+
+	/** 現在の入力設定をカードとしてデッキに追加する (生成はしない) */
+	function addToDeck() {
+		if (!params.value.prompt.trim()) return;
+		deck.value = [
+			...deck.value,
+			{
+				id: randomId(),
+				params: $state.snapshot(params.value),
+				weight: 0.5,
+				createdAt: Date.now()
+			}
+		];
+		bottomTab = 'deck';
+		deckAdded = true;
+		clearTimeout(deckAddedTimer);
+		deckAddedTimer = setTimeout(() => (deckAdded = false), 1200);
+	}
+
+	function setCardWeight(id: string, w: number) {
+		const weight = Math.min(1, Math.max(0, Math.round(w * 10) / 10));
+		deck.value = deck.value.map((c) => (c.id === id ? { ...c, weight } : c));
+	}
+
+	function removeCard(id: string) {
+		deck.value = deck.value.filter((c) => c.id !== id);
+	}
+
+	/** デッキから生成回数分を重み付き抽選してキューに投入する */
+	async function runDeck() {
+		if (submitting) return;
+		const list = drawParams($state.snapshot(deck.value), batchCount);
+		if (list.length === 0) return;
+		submitting = true;
+		previewOverride = false;
+		try {
+			await queue.submitList(list);
+		} finally {
+			submitting = false;
+		}
+	}
+
+	// ── デッキライブラリ (保存・読み込み・複製。サーバー側 SQLite に永続化) ──
+	let savedDecks = $state<SavedDeck[]>([]);
+	/** 読み込んで編集中の保存済みデッキ ID */
+	let editingDeckId = $state<string | null>(null);
+	let deckSaveOpen = $state(false);
+	let deckSaveName = $state('');
+	/** 読み込み確認の対象 */
+	let loadDeckTarget = $state<SavedDeck | null>(null);
+
+	$effect(() => {
+		fetch('/api/decks')
+			.then((r) => (r.ok ? r.json() : []))
+			.then((list) => (savedDecks = list))
+			.catch(() => {});
+	});
+
+	async function persistDeck(sd: SavedDeck) {
+		await fetch('/api/decks', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(sd)
+		}).catch(() => {});
+	}
+
+	/** 現在のデッキに失うと困る未保存の変更があるか */
+	function deckIsDirty(): boolean {
+		const cur = JSON.stringify($state.snapshot(deck.value));
+		if (editingDeckId) {
+			const sd = savedDecks.find((d) => d.id === editingDeckId);
+			if (sd) return cur !== JSON.stringify($state.snapshot(sd).cards);
+		}
+		return deck.value.length > 0;
+	}
+
+	function openDeckSave() {
+		if (!editingDeckId) deckSaveName = '';
+		deckSaveOpen = true;
+	}
+
+	async function saveDeck(asNew: boolean) {
+		const now = Date.now();
+		const existing = !asNew && editingDeckId ? savedDecks.find((d) => d.id === editingDeckId) : undefined;
+		const sd: SavedDeck = {
+			id: existing?.id ?? randomId(),
+			name: deckSaveName.trim() || '無題デッキ',
+			cards: $state.snapshot(deck.value),
+			createdAt: existing?.createdAt ?? now,
+			updatedAt: now
+		};
+		savedDecks = [sd, ...savedDecks.filter((d) => d.id !== sd.id)];
+		editingDeckId = sd.id;
+		deckSaveOpen = false;
+		await persistDeck(sd);
+	}
+
+	function requestLoadDeck(sd: SavedDeck) {
+		if (editingDeckId === sd.id && !deckIsDirty()) return; // 既に読み込み済みで変更なし
+		if (deckIsDirty()) loadDeckTarget = sd;
+		else applyDeck(sd);
+	}
+
+	function confirmLoadDeck() {
+		if (loadDeckTarget) applyDeck(loadDeckTarget);
+		loadDeckTarget = null;
+	}
+
+	function applyDeck(sd: SavedDeck) {
+		deck.value = structuredClone($state.snapshot(sd).cards);
+		editingDeckId = sd.id;
+		deckSaveName = sd.name;
+	}
+
+	/** 保存済みデッキを複製する (現在のデッキには触れない) */
+	async function duplicateDeck(e: MouseEvent, sd: SavedDeck) {
+		e.stopPropagation();
+		const now = Date.now();
+		const copy: SavedDeck = {
+			id: randomId(),
+			name: `${sd.name} (コピー)`,
+			cards: structuredClone($state.snapshot(sd).cards),
+			createdAt: now,
+			updatedAt: now
+		};
+		savedDecks = [copy, ...savedDecks];
+		await persistDeck(copy);
+	}
+
+	async function deleteSavedDeck(e: MouseEvent, sd: SavedDeck) {
+		e.stopPropagation();
+		if (!confirm(`デッキ「${sd.name}」を削除しますか？`)) return;
+		savedDecks = savedDecks.filter((d) => d.id !== sd.id);
+		if (editingDeckId === sd.id) editingDeckId = null;
+		await fetch(`/api/decks/${encodeURIComponent(sd.id)}`, { method: 'DELETE' }).catch(() => {});
+	}
+
+	const editingDeckName = $derived(
+		editingDeckId ? savedDecks.find((d) => d.id === editingDeckId)?.name : null
+	);
+
 	function restoreParams(record: HistoryRecord) {
 		params.value = { ...record.params };
 	}
@@ -174,14 +333,14 @@
 
 	const recent = $derived(history.value.slice(0, 12));
 	/** 下ペインのタブ */
-	let bottomTab = $state<'history' | 'queue'>('history');
-	// 0件→投入でキュータブへ、空になったら履歴へ。
-	// 途中の完了では切り替えない (手動でタブを選んだ状態を尊重する)
+	let bottomTab = $state<'history' | 'queue' | 'deck'>('history');
+	// 0件→投入でキュータブへ、キュータブを見たまま空になったら履歴へ。
+	// 途中の完了やデッキ構築中は切り替えない (手動でタブを選んだ状態を尊重する)
 	let prevJobCount = 0;
 	$effect(() => {
 		const n = activeJobs.length;
 		if (prevJobCount === 0 && n > 0) bottomTab = 'queue';
-		else if (n === 0 && prevJobCount > 0) bottomTab = 'history';
+		else if (n === 0 && prevJobCount > 0 && bottomTab === 'queue') bottomTab = 'history';
 		prevJobCount = n;
 	});
 
@@ -436,20 +595,37 @@
 				<div
 					class="sticky bottom-0 -mx-5 -mb-5 flex flex-col gap-2 border-t border-edge bg-panel/95 px-5 pt-3 pb-4 backdrop-blur"
 				>
-					<button
-						class="group flex items-center justify-center gap-2 rounded-xl bg-amber py-3 text-sm font-bold text-black shadow-[0_0_24px_rgb(255_178_36/0.25)] transition-all hover:bg-amber/90 hover:shadow-[0_0_32px_rgb(255_178_36/0.4)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-						onclick={generate}
-						disabled={!params.value.prompt.trim() || submitting}
-					>
-						<Sparkles size={16} class="transition-transform group-hover:rotate-12" />
-						{submitting
-							? '送信中…'
-							: batchCount > 1
-								? `${batchCount}件をキューに追加`
-								: activeJobs.length > 0
-									? 'キューに追加'
-									: '動画を生成'}
-					</button>
+					<div class="flex gap-2">
+						<button
+							class="group flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber py-3 text-sm font-bold text-black shadow-[0_0_24px_rgb(255_178_36/0.25)] transition-all hover:bg-amber/90 hover:shadow-[0_0_32px_rgb(255_178_36/0.4)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+							onclick={generate}
+							disabled={!params.value.prompt.trim() || submitting}
+						>
+							<Sparkles size={16} class="transition-transform group-hover:rotate-12" />
+							{submitting
+								? '送信中…'
+								: batchCount > 1
+									? `${batchCount}件をキューに追加`
+									: activeJobs.length > 0
+										? 'キューに追加'
+										: '動画を生成'}
+						</button>
+						<button
+							class="flex items-center justify-center gap-1.5 rounded-xl border px-3.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40
+							{deckAdded
+								? 'border-ok/40 bg-ok/10 text-ok'
+								: 'border-edge text-mute hover:border-amber/40 hover:text-amber'}"
+							onclick={addToDeck}
+							disabled={!params.value.prompt.trim()}
+							title="生成せず、現在の入力設定をカードとしてデッキに追加する"
+						>
+							{#if deckAdded}
+								<Check size={14} />追加
+							{:else}
+								<Layers size={14} />デッキ
+							{/if}
+						</button>
+					</div>
 
 					{#if activeJobs.length > 0}
 						<div
@@ -714,7 +890,55 @@
 					</span>
 				{/if}
 			</button>
-			{#if bottomTab === 'history' && history.value.length > 0}
+			<button
+				class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors
+				{bottomTab === 'deck' ? 'bg-panel2 text-ink' : 'text-faint hover:text-mute'}"
+				onclick={() => (bottomTab = 'deck')}
+			>
+				<Layers size={12} />Deck
+				{#if deck.value.length > 0}
+					<span class="rounded-full bg-panel2 px-1.5 text-[9px] font-bold text-mute">
+						{deck.value.length}
+					</span>
+				{/if}
+			</button>
+			{#if bottomTab === 'deck'}
+				{#if editingDeckName}
+					<span
+						class="flex items-center gap-1 rounded-full border border-amber/30 bg-amber/10 px-2 py-0.5 text-[10px] text-amber"
+						title="このデッキを編集中"
+					>
+						<Layers size={10} />{editingDeckName}
+					</span>
+					<button
+						class="rounded p-0.5 text-faint transition-colors hover:text-ink"
+						onclick={() => (editingDeckId = null)}
+						title="保存済みデッキの編集をやめて新規にする"
+					>
+						<X size={11} />
+					</button>
+				{/if}
+				{#if deck.value.length > 0}
+					<div class="ml-auto flex items-center gap-2">
+						<button
+							class="flex items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1 text-[11px] font-medium text-mute transition-colors hover:border-amber/40 hover:text-amber"
+							onclick={openDeckSave}
+							title="現在のデッキをライブラリに保存する"
+						>
+							<Save size={11} />保存
+						</button>
+						<button
+							class="flex items-center gap-1.5 rounded-lg bg-amber px-3 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-amber/85 disabled:cursor-not-allowed disabled:opacity-40"
+							onclick={runDeck}
+							disabled={aliveCards(deck.value).length === 0 || submitting}
+							title="重みに比例した確率で {batchCount} 回抽選し、キューに投入する"
+						>
+							<Play size={11} fill="currentColor" />
+							{submitting ? '送信中…' : `${batchCount}件実行`}
+						</button>
+					</div>
+				{/if}
+			{:else if bottomTab === 'history' && history.value.length > 0}
 				<a href="/library" class="ml-auto text-[11px] text-mute transition-colors hover:text-amber">
 					すべて見る →
 				</a>
@@ -728,7 +952,126 @@
 			{/if}
 		</div>
 
-		{#if bottomTab === 'queue'}
+		{#if bottomTab === 'deck'}
+			<!-- デッキ構築モード: カードの削除と重み調整 -->
+			<div class="flex gap-3 overflow-x-auto px-5 pt-1 pb-3.5">
+				{#if deck.value.length === 0}
+					<p class="self-center py-4 text-xs whitespace-nowrap text-faint">
+						デッキは空です。入力欄の「デッキ」ボタンで現在の設定をカードとして追加できます
+					</p>
+				{:else}
+					{#each deck.value as card (card.id)}
+						<div
+							class="w-60 shrink-0 rounded-lg border bg-panel p-2.5 transition-opacity
+							{card.weight > 0 ? 'border-edge' : 'border-edge opacity-45'}"
+						>
+							<div class="flex items-center gap-1.5">
+								<span
+									class="rounded border border-amber/25 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-amber"
+									title="デッキ実行時にこのカードが選ばれる確率"
+								>
+									{Math.round(appearanceRate(card, deck.value) * 100)}%
+								</span>
+								{#if card.weight <= 0}
+									<span class="font-mono text-[9px] text-faint">出現しない</span>
+								{/if}
+								<button
+									class="ml-auto rounded p-0.5 text-faint transition-colors hover:bg-rec/15 hover:text-rec"
+									onclick={() => removeCard(card.id)}
+									title="このカードをデッキから外す"
+								>
+									<X size={12} />
+								</button>
+							</div>
+							<p class="mt-1 truncate text-[11px] text-ink/85" title={card.params.prompt}>
+								{card.params.prompt}
+							</p>
+							<div class="mt-1 flex items-center gap-2 font-mono text-[9px] text-faint">
+								<span>{card.params.aspectRatio.split(' ')[0]}</span>
+								<span>{card.params.megapixels}MP</span>
+								<span>{card.params.duration}s</span>
+								<span>{card.params.steps}steps</span>
+							</div>
+							<div class="mt-1.5 flex items-center gap-2">
+								<span class="shrink-0 text-[9px] text-mute">重み</span>
+								<input
+									type="range"
+									class="fader flex-1"
+									min="0"
+									max="1"
+									step="0.1"
+									value={card.weight}
+									oninput={(e) => setCardWeight(card.id, parseFloat(e.currentTarget.value))}
+									style={fill(card.weight, 0, 1)}
+								/>
+								<span class="w-7 shrink-0 text-right font-mono text-[10px] text-amber">
+									{card.weight.toFixed(1)}
+								</span>
+							</div>
+						</div>
+					{/each}
+				{/if}
+
+				<!-- デッキライブラリ (保存済みデッキ) -->
+				{#if savedDecks.length > 0}
+					<div class="mx-1 w-px shrink-0 self-stretch bg-edge"></div>
+					<div
+						class="flex shrink-0 items-center self-stretch font-mono text-[9px] font-semibold tracking-[0.2em] text-faint uppercase"
+						style="writing-mode: vertical-rl"
+					>
+						Library
+					</div>
+					{#each savedDecks as sd (sd.id)}
+						<div
+							class="group w-44 shrink-0 cursor-pointer rounded-lg border p-2.5 transition-all
+							{editingDeckId === sd.id
+								? 'border-amber/50 bg-amber/5'
+								: 'border-edge bg-panel hover:border-edge2 hover:bg-panel2'}"
+							onclick={() => requestLoadDeck(sd)}
+							onkeydown={(e) => e.key === 'Enter' && requestLoadDeck(sd)}
+							role="button"
+							tabindex="0"
+							title="クリックでこのデッキを読み込む"
+						>
+							<div class="flex items-center gap-1.5">
+								<Layers size={11} class="shrink-0 text-amber/70" />
+								<p class="min-w-0 flex-1 truncate text-[12px] font-medium text-ink/90">
+									{sd.name}
+								</p>
+								<button
+									class="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all group-hover:opacity-100 hover:text-amber"
+									onclick={(e) => duplicateDeck(e, sd)}
+									title="このデッキを複製する"
+								>
+									<CopyPlus size={12} />
+								</button>
+								<button
+									class="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all group-hover:opacity-100 hover:text-rec"
+									onclick={(e) => deleteSavedDeck(e, sd)}
+									title="このデッキを削除する"
+								>
+									<Trash2 size={12} />
+								</button>
+							</div>
+							<p class="mt-1 truncate text-[10px] text-mute">
+								{sd.cards
+									.map((c) => c.params.prompt)
+									.join(' / ')}
+							</p>
+							<p class="mt-0.5 font-mono text-[9px] text-faint">
+								{sd.cards.length}枚 ·
+								{new Date(sd.updatedAt).toLocaleString('ja-JP', {
+									month: 'numeric',
+									day: 'numeric',
+									hour: '2-digit',
+									minute: '2-digit'
+								})}
+							</p>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		{:else if bottomTab === 'queue'}
 			<!-- キュー一覧 -->
 			<div class="flex gap-3 overflow-x-auto px-5 pt-1 pb-3.5">
 				{#if activeJobs.length === 0}
@@ -855,3 +1198,108 @@
 </main>
 
 <VideoModal bind:open={modalOpen} record={viewRecord} />
+
+<!-- デッキ保存ダイアログ -->
+<Dialog.Root bind:open={deckSaveOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
+		<Dialog.Content
+			class="fade-up fixed top-1/2 left-1/2 z-50 w-[min(440px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-edge bg-panel p-6 shadow-2xl shadow-black/60"
+		>
+			<div class="mb-4 flex items-center justify-between">
+				<Dialog.Title
+					class="flex items-center gap-2 font-mono text-sm font-semibold tracking-widest text-ink uppercase"
+				>
+					<Save size={16} class="text-amber" />
+					デッキ保存
+				</Dialog.Title>
+				<Dialog.Close
+					class="rounded-md p-1 text-mute transition-colors hover:bg-panel2 hover:text-ink"
+					aria-label="閉じる"
+				>
+					<X size={16} />
+				</Dialog.Close>
+			</div>
+
+			<label class="mb-1.5 block text-xs font-medium text-mute" for="deck-name">デッキ名</label>
+			<input
+				id="deck-name"
+				class="field-input"
+				bind:value={deckSaveName}
+				placeholder="例: 屋上バリエーション"
+				onkeydown={(e) => e.key === 'Enter' && saveDeck(false)}
+			/>
+			<p class="mt-2 text-[11px] text-faint">
+				カード {deck.value.length} 枚と重みの設定を保存します。
+			</p>
+
+			<div class="mt-5 flex justify-end gap-2">
+				<Dialog.Close
+					class="rounded-lg border border-edge px-4 py-2 text-xs font-medium text-mute transition-colors hover:border-edge2 hover:text-ink"
+				>
+					キャンセル
+				</Dialog.Close>
+				{#if editingDeckId}
+					<button
+						class="rounded-lg border border-amber/40 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/10"
+						onclick={() => saveDeck(true)}
+					>
+						別のデッキとして保存
+					</button>
+				{/if}
+				<button
+					class="rounded-lg bg-amber px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-amber/85"
+					onclick={() => saveDeck(false)}
+				>
+					{editingDeckId ? '上書き保存' : '保存'}
+				</button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
+<!-- デッキ読み込み確認ダイアログ -->
+<Dialog.Root
+	open={loadDeckTarget !== null}
+	onOpenChange={(o) => {
+		if (!o) loadDeckTarget = null;
+	}}
+>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
+		<Dialog.Content
+			class="fade-up fixed top-1/2 left-1/2 z-50 w-[min(440px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-edge bg-panel p-6 shadow-2xl shadow-black/60"
+		>
+			<Dialog.Title
+				class="flex items-center gap-2 font-mono text-sm font-semibold tracking-widest text-ink uppercase"
+			>
+				<TriangleAlert size={16} class="text-amber" />
+				読み込みの確認
+			</Dialog.Title>
+			<p class="mt-3 text-[13px] leading-relaxed text-mute">
+				「<span class="text-ink">{loadDeckTarget?.name}</span>」を読み込むと、
+				{#if editingDeckName}
+					編集中のデッキ「<span class="text-ink">{editingDeckName}</span>」への未保存の変更は失われます。
+				{:else}
+					現在の未保存のデッキは失われます。
+				{/if}
+			</p>
+			<p class="mt-1.5 text-[11px] text-faint">
+				残したい場合はキャンセルして「保存」してから読み込んでください。
+			</p>
+			<div class="mt-5 flex justify-end gap-2">
+				<Dialog.Close
+					class="rounded-lg border border-edge px-4 py-2 text-xs font-medium text-mute transition-colors hover:border-edge2 hover:text-ink"
+				>
+					キャンセル
+				</Dialog.Close>
+				<button
+					class="rounded-lg bg-amber px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-amber/85"
+					onclick={confirmLoadDeck}
+				>
+					破棄して読み込む
+				</button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>

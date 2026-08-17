@@ -102,6 +102,29 @@ export interface QueueJob {
 
 export const jobs = new Persisted<QueueJob[]>('vg:jobs', []);
 
+/**
+ * デッキのカード。入力設定のスナップショットと出現率の重み。
+ * デッキ実行時に重みに比例した確率で抽選され、選ばれたカードの設定で生成される。
+ */
+export interface DeckCard {
+	id: string;
+	params: GenParams;
+	/** 出現率の重み (0〜1、0.1刻み)。0 のカードは出現しない */
+	weight: number;
+	createdAt: number;
+}
+
+export const deck = new Persisted<DeckCard[]>('vg:deck', []);
+
+/** デッキライブラリに保存されたデッキ (サーバー側 SQLite に永続化) */
+export interface SavedDeck {
+	id: string;
+	name: string;
+	cards: DeckCard[];
+	createdAt: number;
+	updatedAt: number;
+}
+
 // 旧形式 (単一の実行中ジョブ) が残っていればキューへ移す
 if (browser) {
 	try {
