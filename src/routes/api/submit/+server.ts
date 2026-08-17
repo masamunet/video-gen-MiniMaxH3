@@ -1,9 +1,38 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { comfyUrl } from '$lib/server/comfy';
+import { NO_KEY_ERROR, runpodHeaders, runpodKey, runpodUrl } from '$lib/server/runpod';
 
 export const POST: RequestHandler = async ({ request }) => {
-	const { host, workflow } = await request.json();
+	const { host, workflow, backend, endpointId } = await request.json();
+
+	// ── RunPod Serverless ──
+	if (backend === 'runpod') {
+		const key = runpodKey();
+		if (!key) return json({ error: NO_KEY_ERROR }, { status: 400 });
+		if (!endpointId) return json({ error: 'RunPod の Endpoint ID が設定されていません' }, { status: 400 });
+
+		let res: Response;
+		try {
+			res = await fetch(runpodUrl(endpointId, 'run'), {
+				method: 'POST',
+				headers: runpodHeaders(key),
+				body: JSON.stringify({ input: { workflow } })
+			});
+		} catch {
+			return json({ error: 'RunPod に接続できません' }, { status: 502 });
+		}
+		const data = await res.json().catch(() => null);
+		if (!res.ok || !data?.id) {
+			return json(
+				{ error: data?.error ?? `RunPod がエラーを返しました (${res.status})` },
+				{ status: 502 }
+			);
+		}
+		return json({ prompt_id: data.id });
+	}
+
+	// ── デスクトップの ComfyUI ──
 	const url = comfyUrl(host, '/prompt');
 
 	let res: Response;

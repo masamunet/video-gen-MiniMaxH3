@@ -18,7 +18,9 @@
 	];
 
 	const hostLabel = $derived(
-		settings.value.host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+		settings.value.backend === 'runpod'
+			? `RunPod (${settings.value.runpodEndpointId || '未設定'})`
+			: settings.value.host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
 	);
 </script>
 

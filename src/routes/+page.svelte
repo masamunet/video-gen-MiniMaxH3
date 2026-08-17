@@ -22,7 +22,9 @@
 		parseOutputs,
 		videoUrl,
 		fetchResolutionOptions,
-		fmtSeconds
+		fmtSeconds,
+		targetFromSettings,
+		type BackendTarget
 	} from '$lib/comfy';
 	import VideoModal from '$lib/components/VideoModal.svelte';
 	import TestPattern from '$lib/components/TestPattern.svelte';
@@ -30,7 +32,15 @@
 	type Phase = 'idle' | 'submitting' | 'queued' | 'running' | 'done' | 'error';
 
 	const host = $derived(settings.value.host);
+	const target = $derived(targetFromSettings(settings.value));
 	const boss = $derived(bossMode.value);
+
+	/** pending に保存されたジョブの送信先 (旧データは comfy 扱い) */
+	function targetOfPending(p: { backend?: string; endpointId?: string; host?: string }): BackendTarget {
+		return p.backend === 'runpod'
+			? { backend: 'runpod', host: p.host ?? settings.value.host, endpointId: p.endpointId ?? '' }
+			: { backend: 'comfy', host: p.host ?? settings.value.host, endpointId: '' };
+	}
 
 	let phase = $state<Phase>('idle');
 	let queuePos = $state(0);
@@ -102,17 +112,25 @@
 		startTicker();
 
 		const snapshot = $state.snapshot(params.value);
-		const res = await submitWorkflow(host, buildWorkflow(snapshot));
+		const tgt = target;
+		const res = await submitWorkflow(tgt, buildWorkflow(snapshot));
 		if (res.error || !res.prompt_id) {
 			fail(res.error ?? '送信に失敗しました');
 			return;
 		}
 
-		pending.value = { id: res.prompt_id, params: snapshot, startedAt: Date.now() };
-		await pollLoop(res.prompt_id, snapshot);
+		pending.value = {
+			id: res.prompt_id,
+			params: snapshot,
+			startedAt: Date.now(),
+			backend: tgt.backend,
+			endpointId: tgt.endpointId,
+			host: tgt.host
+		};
+		await pollLoop(res.prompt_id, snapshot, tgt);
 	}
 
-	async function pollLoop(id: string, snapshot: GenParams) {
+	async function pollLoop(id: string, snapshot: GenParams, tgt: BackendTarget) {
 		const token = ++pollToken;
 		phase = 'queued';
 		queuePos = 0;
@@ -121,7 +139,7 @@
 		while (token === pollToken) {
 			await sleep(1500);
 			if (token !== pollToken) return;
-			const st = await pollStatus(host, id);
+			const st = await pollStatus(tgt, id);
 			if (token !== pollToken) return;
 
 			if (st.state === 'done') {
@@ -171,7 +189,7 @@
 		startTime = performance.now() - alreadyElapsed;
 		elapsed = alreadyElapsed / 1000;
 		startTicker();
-		pollLoop(p.id, p.params);
+		pollLoop(p.id, p.params, targetOfPending(p));
 	});
 
 	function fail(msg: string) {
@@ -185,9 +203,10 @@
 	async function cancel() {
 		pollToken++;
 		stopTicker();
+		const p = pending.value && $state.snapshot(pending.value);
 		pending.value = null;
-		await interrupt(host);
 		phase = 'idle';
+		await interrupt(p ? targetOfPending(p) : target, p?.id);
 	}
 
 	function restoreParams(record: HistoryRecord) {
@@ -260,6 +279,22 @@
 			</div>
 
 			<div class="flex flex-col gap-5 p-5">
+				<!-- APIサーバー -->
+				<div>
+					<label class="mb-1.5 block text-xs font-medium text-mute" for="backend">
+						API サーバー
+					</label>
+					<select
+						id="backend"
+						class="field-input"
+						bind:value={settings.value.backend}
+						disabled={busy}
+					>
+						<option value="comfy">デスクトップマシン (ComfyUI)</option>
+						<option value="runpod">RunPod Serverless</option>
+					</select>
+				</div>
+
 				<!-- プロンプト -->
 				<div>
 					<label class="mb-1.5 block text-xs font-medium text-mute" for="prompt">

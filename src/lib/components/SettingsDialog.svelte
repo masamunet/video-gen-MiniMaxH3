@@ -2,19 +2,29 @@
 	import { Dialog } from 'bits-ui';
 	import X from '@lucide/svelte/icons/x';
 	import ServerCog from '@lucide/svelte/icons/server-cog';
-	import { settings } from '$lib/stores.svelte';
+	import { settings, type Backend } from '$lib/stores.svelte';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
-	let draft = $state('');
+	let draftHost = $state('');
+	let draftBackend = $state<Backend>('comfy');
+	let draftEndpointId = $state('');
 
 	$effect(() => {
-		if (open) draft = settings.value.host;
+		if (open) {
+			draftHost = settings.value.host;
+			draftBackend = settings.value.backend ?? 'comfy';
+			draftEndpointId = settings.value.runpodEndpointId ?? '';
+		}
 	});
 
 	function save() {
-		const v = draft.trim();
-		if (v) settings.value = { ...settings.value, host: v };
+		settings.value = {
+			...settings.value,
+			host: draftHost.trim() || settings.value.host,
+			backend: draftBackend,
+			runpodEndpointId: draftEndpointId.trim()
+		};
 		open = false;
 	}
 </script>
@@ -38,19 +48,55 @@
 				</Dialog.Close>
 			</div>
 
-			<label class="mb-1.5 block text-xs font-medium text-mute" for="host-input">
-				ComfyUI ホスト
-			</label>
-			<input
-				id="host-input"
-				class="field-input font-mono text-[13px]"
-				bind:value={draft}
-				placeholder="http://localhost:8000/"
-				onkeydown={(e) => e.key === 'Enter' && save()}
-			/>
-			<p class="mt-2 text-[11px] leading-relaxed text-faint">
-				ComfyUI サーバーの URL。アスペクト比などの選択肢もこのサーバーから取得します。
-			</p>
+			<div class="flex flex-col gap-4">
+				<div>
+					<label class="mb-1.5 block text-xs font-medium text-mute" for="backend-select">
+						API サーバー
+					</label>
+					<select id="backend-select" class="field-input" bind:value={draftBackend}>
+						<option value="comfy">デスクトップマシン (ComfyUI)</option>
+						<option value="runpod">RunPod Serverless</option>
+					</select>
+				</div>
+
+				{#if draftBackend === 'comfy'}
+					<div>
+						<label class="mb-1.5 block text-xs font-medium text-mute" for="host-input">
+							ComfyUI ホスト
+						</label>
+						<input
+							id="host-input"
+							class="field-input font-mono text-[13px]"
+							bind:value={draftHost}
+							placeholder="http://localhost:8000/"
+							onkeydown={(e) => e.key === 'Enter' && save()}
+						/>
+						<p class="mt-1.5 text-[11px] leading-relaxed text-faint">
+							ComfyUI サーバーの URL。アスペクト比などの選択肢もこのサーバーから取得します。
+						</p>
+					</div>
+				{:else}
+					<div>
+						<label class="mb-1.5 block text-xs font-medium text-mute" for="endpoint-input">
+							RunPod Endpoint ID
+						</label>
+						<input
+							id="endpoint-input"
+							class="field-input font-mono text-[13px]"
+							bind:value={draftEndpointId}
+							placeholder="your-runpod-endpoint-id"
+							onkeydown={(e) => e.key === 'Enter' && save()}
+						/>
+						<p class="mt-1.5 text-[11px] leading-relaxed text-faint">
+							API キーはこの画面では設定しません。アプリのサーバーを環境変数
+							<code class="rounded bg-well px-1 font-mono text-amber/80">RUNPOD_API_KEY</code>
+							を付けて起動してください (例:
+							<code class="rounded bg-well px-1 font-mono">RUNPOD_API_KEY=... node build</code>)。
+							過去にデスクトップで生成した動画の再生には引き続き ComfyUI ホストを使います。
+						</p>
+					</div>
+				{/if}
+			</div>
 
 			<div class="mt-5 flex justify-end gap-2">
 				<Dialog.Close

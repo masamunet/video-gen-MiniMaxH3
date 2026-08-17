@@ -31,6 +31,15 @@ SvelteKit (Svelte 5 runes) + Tailwind CSS v4 + bits-ui + Lucide + better-sqlite3
 判定は SvelteKit の `$app/environment` の `dev` フラグ。`data/` は gitignore 済み。
 dev / prod の DB を相互にコピー・マージするコードや運用を追加しないこと。
 
+## RunPod Serverless
+
+- 生成バックエンドとして RunPod Serverless (Endpoint `your-runpod-endpoint-id`) を選択可能。
+  送信形式は `{input:{workflow}}`、結果は `output.images[].data` (base64) で返る
+- **API キー (`rpa_...`) は絶対にファイルへ書かない・コミットしない**。
+  サーバー起動時の環境変数 `RUNPOD_API_KEY` でのみ渡す
+- RunPod の `workersMin` は 0 のままにする (1 以上はアイドル課金)
+- 動作確認は軽量設定 (0.1MP / duration 5 / steps 4) で行う。1回あたり約3分
+
 ## 開発メモ
 
 - 起動: `npm run dev` (ポート5173)。型チェック: `npm run check`

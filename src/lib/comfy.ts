@@ -1,6 +1,21 @@
-// ComfyUI との通信ヘルパー(すべて同一オリジンのプロキシ /api/* 経由でCORSを回避)
+// 生成バックエンドとの通信ヘルパー(すべて同一オリジンのプロキシ /api/* 経由でCORSを回避)
 import { EN_FINAL_ID, JP_CAPTURE_ID, SAVE_VIDEO_ID } from './workflow';
-import type { VideoFile } from './stores.svelte';
+import type { Backend, Settings, VideoFile } from './stores.svelte';
+
+/** 生成リクエストの送信先 (デスクトップの ComfyUI か RunPod Serverless) */
+export interface BackendTarget {
+	backend: Backend;
+	host: string;
+	endpointId: string;
+}
+
+export function targetFromSettings(s: Settings): BackendTarget {
+	return {
+		backend: s.backend ?? 'comfy',
+		host: s.host,
+		endpointId: s.runpodEndpointId ?? ''
+	};
+}
 
 export interface SubmitResult {
 	prompt_id?: string;
@@ -8,13 +23,13 @@ export interface SubmitResult {
 }
 
 export async function submitWorkflow(
-	host: string,
+	target: BackendTarget,
 	workflow: Record<string, unknown>
 ): Promise<SubmitResult> {
 	const res = await fetch('/api/submit', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ host, workflow })
+		body: JSON.stringify({ ...target, workflow })
 	});
 	const data = await res.json();
 	if (!res.ok) return { error: data.error ?? `送信に失敗しました (${res.status})` };
@@ -28,8 +43,13 @@ export type PollState =
 	| { state: 'error'; message: string }
 	| { state: 'unknown' };
 
-export async function pollStatus(host: string, promptId: string): Promise<PollState> {
-	const res = await fetch(`/api/status/${encodeURIComponent(promptId)}?host=${encodeURIComponent(host)}`);
+export async function pollStatus(target: BackendTarget, promptId: string): Promise<PollState> {
+	const q = new URLSearchParams({
+		backend: target.backend,
+		host: target.host,
+		endpointId: target.endpointId
+	});
+	const res = await fetch(`/api/status/${encodeURIComponent(promptId)}?${q}`);
 	if (!res.ok) {
 		const data = await res.json().catch(() => ({}));
 		return { state: 'error', message: data.error ?? `状態取得に失敗しました (${res.status})` };
@@ -37,11 +57,11 @@ export async function pollStatus(host: string, promptId: string): Promise<PollSt
 	return res.json();
 }
 
-export async function interrupt(host: string): Promise<void> {
+export async function interrupt(target: BackendTarget, jobId?: string): Promise<void> {
 	await fetch('/api/interrupt', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ host })
+		body: JSON.stringify({ ...target, jobId })
 	}).catch(() => {});
 }
 
@@ -90,12 +110,16 @@ export function parseOutputs(outputs: Record<string, Record<string, unknown>>): 
 }
 
 export function videoUrl(host: string, file: VideoFile, download = false): string {
-	const q = new URLSearchParams({
-		host,
-		filename: file.filename,
-		subfolder: file.subfolder,
-		type: file.type
-	});
+	// type 'local' は RunPod 生成などでアプリのサーバーに保存されたファイル (host 不要)
+	const q =
+		file.type === 'local'
+			? new URLSearchParams({ filename: file.filename, type: 'local' })
+			: new URLSearchParams({
+					host,
+					filename: file.filename,
+					subfolder: file.subfolder,
+					type: file.type
+				});
 	if (download) q.set('download', '1');
 	return `/api/view?${q}`;
 }

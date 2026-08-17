@@ -1,12 +1,67 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { comfyUrl } from '$lib/server/comfy';
+import {
+	NO_KEY_ERROR,
+	runpodHeaders,
+	runpodKey,
+	runpodUrl,
+	saveVideoFromBase64
+} from '$lib/server/runpod';
 
 // 生成状況を返す: queued(待ち順) / running / done(outputs付き) / error
 export const GET: RequestHandler = async ({ params, url }) => {
 	const host = url.searchParams.get('host');
 	const id = params.id;
 
+	// ── RunPod Serverless ──
+	if (url.searchParams.get('backend') === 'runpod') {
+		const endpointId = url.searchParams.get('endpointId') ?? '';
+		const key = runpodKey();
+		if (!key) return json({ state: 'error', message: NO_KEY_ERROR });
+		try {
+			const res = await fetch(runpodUrl(endpointId, `status/${encodeURIComponent(id)}`), {
+				headers: runpodHeaders(key)
+			});
+			if (!res.ok) return json({ state: 'unknown' });
+			const d = await res.json();
+			switch (d.status) {
+				case 'IN_QUEUE':
+					return json({ state: 'queued', position: 0 });
+				case 'IN_PROGRESS':
+					return json({ state: 'running' });
+				case 'COMPLETED': {
+					// output.images[] の base64 動画をローカルに保存し、
+					// ComfyUI history と同じ形の outputs に変換して返す
+					const images: Array<{ filename?: string; data?: string }> = d.output?.images ?? [];
+					const files = images
+						.filter((im) => im?.data)
+						.map((im) => ({
+							filename: saveVideoFromBase64(id, im.filename ?? 'output.mp4', im.data!),
+							subfolder: '',
+							type: 'local'
+						}));
+					return json({ state: 'done', outputs: { '150': { images: files } } });
+				}
+				case 'FAILED':
+				case 'CANCELLED':
+				case 'TIMED_OUT':
+					return json({
+						state: 'error',
+						message:
+							typeof d.error === 'string' && d.error
+								? d.error
+								: `RunPod ジョブが ${d.status} になりました`
+					});
+				default:
+					return json({ state: 'unknown' });
+			}
+		} catch {
+			return json({ error: 'RunPod に接続できません' }, { status: 502 });
+		}
+	}
+
+	// ── デスクトップの ComfyUI ──
 	try {
 		const historyRes = await fetch(comfyUrl(host, `/history/${id}`));
 		if (historyRes.ok) {

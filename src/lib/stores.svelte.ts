@@ -34,8 +34,14 @@ class Persisted<T> {
 	}
 }
 
+export type Backend = 'comfy' | 'runpod';
+
 export interface Settings {
 	host: string;
+	/** 生成に使う API サーバー */
+	backend: Backend;
+	/** RunPod Serverless の Endpoint ID (API キーはサーバー側の環境変数 RUNPOD_API_KEY) */
+	runpodEndpointId: string;
 }
 
 export interface VideoFile {
@@ -58,7 +64,9 @@ export interface HistoryRecord {
 }
 
 export const settings = new Persisted<Settings>('vg:settings', {
-	host: 'http://localhost:8000/'
+	host: 'http://localhost:8000/',
+	backend: 'comfy',
+	runpodEndpointId: 'your-runpod-endpoint-id'
 });
 
 export const params = new Persisted<GenParams>('vg:params', DEFAULT_PARAMS);
@@ -68,6 +76,10 @@ export interface PendingJob {
 	id: string;
 	params: GenParams;
 	startedAt: number;
+	/** 送信先バックエンド (旧データは undefined = comfy) */
+	backend?: Backend;
+	endpointId?: string;
+	host?: string;
 }
 
 export const pending = new Persisted<PendingJob | null>('vg:pending', null);
