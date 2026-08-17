@@ -10,6 +10,7 @@
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
 	import { billableSeconds, fmtCost, fmtCostTotal } from '$lib/cost';
 	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
+	import Download from '@lucide/svelte/icons/download';
 	import VideoModal from '$lib/components/VideoModal.svelte';
 	import TestPattern from '$lib/components/TestPattern.svelte';
 
@@ -148,6 +149,17 @@
 							>
 								{fmtSeconds(rec.seconds)}
 							</span>
+							{#if rec.video && !boss}
+								<a
+									class="absolute top-1.5 right-9 rounded-md bg-black/60 p-1.5 text-mute opacity-0 transition-all group-hover:opacity-100 hover:bg-amber hover:text-black"
+									href={videoUrl(host, rec.video, true)}
+									onclick={(e) => e.stopPropagation()}
+									title="この動画をダウンロード"
+									aria-label="ダウンロード"
+								>
+									<Download size={13} />
+								</a>
+							{/if}
 							<button
 								class="absolute top-1.5 right-1.5 rounded-md bg-black/60 p-1.5 text-mute opacity-0 transition-all group-hover:opacity-100 hover:bg-rec/20 hover:text-rec"
 								onclick={(e) => remove(e, rec)}

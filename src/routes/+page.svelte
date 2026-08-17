@@ -55,6 +55,16 @@
 	let modalOpen = $state(false);
 	let copied = $state(false);
 
+	/**
+	 * 生成中は経過秒数のパネルを出すが、履歴サムネイルやカルーセルを操作したときは
+	 * 結果表示に切り替える (長いキューの間ずっと結果を見られないのを避ける)。
+	 * 新しい投入時とキューが空になったときに解除する。
+	 */
+	let previewOverride = $state(false);
+	$effect(() => {
+		if (activeJobs.length === 0) previewOverride = false;
+	});
+
 	// ── 出力ペインのカルーセル (履歴を新しい順にたどる) ──
 	const viewIndex = $derived(
 		viewRecord ? history.value.findIndex((r) => r.id === viewRecord!.id) : -1
@@ -63,10 +73,15 @@
 	const canNext = $derived(viewIndex >= 0 && viewIndex < history.value.length - 1);
 
 	function showPrev() {
-		if (canPrev) viewRecord = history.value[viewIndex - 1];
+		if (canPrev) select(history.value[viewIndex - 1]);
 	}
 	function showNext() {
-		if (canNext) viewRecord = history.value[viewIndex + 1];
+		if (canNext) select(history.value[viewIndex + 1]);
+	}
+	/** 結果を選んで表示する (生成中でも結果表示に切り替える) */
+	function select(rec: HistoryRecord) {
+		viewRecord = rec;
+		if (busy) previewOverride = true;
 	}
 
 	/** 直近の投入で生成された何本目かを示す (バッチが複数本のときだけ) */
@@ -116,6 +131,7 @@
 	async function generate() {
 		if (submitting || !params.value.prompt.trim()) return;
 		submitting = true;
+		previewOverride = false;
 		try {
 			await queue.submit($state.snapshot(params.value), batchCount);
 		} finally {
@@ -465,8 +481,8 @@
 			</div>
 
 			<div class="flex min-h-0 flex-1 flex-col">
-				{#if busy && !viewRecord}
-					<!-- 生成中 (まだ表示できる結果がないとき) -->
+				{#if busy && !previewOverride}
+					<!-- 生成中 (履歴サムネイルやカルーセルを操作すると結果表示に切り替わる) -->
 					<div class="flex min-h-0 flex-1 items-center justify-center p-8">
 						<div
 							class="relative flex aspect-video w-full max-w-xl items-center justify-center overflow-hidden rounded-xl border border-edge bg-well"
@@ -716,12 +732,16 @@
 				<p class="py-4 text-xs text-faint">まだ生成履歴がありません</p>
 			{:else}
 				{#each recent as rec (rec.id)}
-					<button
-						class="group w-44 shrink-0 overflow-hidden rounded-lg border text-left transition-all
+					<!-- ダウンロードリンクを内包するため button ではなく div にしている -->
+					<div
+						class="group w-44 shrink-0 cursor-pointer overflow-hidden rounded-lg border text-left transition-all
 						{viewRecord?.id === rec.id
 							? 'border-amber/50 bg-amber/5'
 							: 'border-edge bg-panel hover:border-edge2 hover:bg-panel2'}"
-						onclick={() => (viewRecord = rec)}
+						onclick={() => select(rec)}
+						onkeydown={(e) => e.key === 'Enter' && select(rec)}
+						role="button"
+						tabindex="0"
 						title={rec.jpPrompt || rec.params.prompt}
 					>
 						<div class="relative h-20 overflow-hidden bg-well">
@@ -747,6 +767,17 @@
 								>
 									{fmtSeconds(rec.seconds)}
 								</span>
+								{#if rec.video}
+									<a
+										class="absolute top-1 right-1 rounded-md bg-black/70 p-1.5 text-mute opacity-0 transition-all group-hover:opacity-100 hover:bg-amber hover:text-black"
+										href={videoUrl(host, rec.video, true)}
+										onclick={(e) => e.stopPropagation()}
+										title="この動画をダウンロード"
+										aria-label="ダウンロード"
+									>
+										<Download size={12} />
+									</a>
+								{/if}
 							{/if}
 						</div>
 						<div class="px-2.5 py-1.5">
@@ -762,7 +793,7 @@
 								})}
 							</p>
 						</div>
-					</button>
+					</div>
 				{/each}
 			{/if}
 		</div>
