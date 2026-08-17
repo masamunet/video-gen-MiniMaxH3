@@ -11,7 +11,9 @@ function toRecord(row: ReturnType<typeof listHistory>[number]): HistoryRecord {
 		jpPrompt: row.jpPrompt,
 		enPrompt: row.enPrompt,
 		seconds: row.seconds,
-		video: row.video ? JSON.parse(row.video) : null
+		video: row.video ? JSON.parse(row.video) : null,
+		backend: (row.backend as HistoryRecord['backend']) ?? undefined,
+		execSeconds: row.execSeconds
 	};
 }
 
@@ -29,7 +31,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		jpPrompt: rec.jpPrompt ?? '',
 		enPrompt: rec.enPrompt ?? '',
 		seconds: rec.seconds ?? 0,
-		video: rec.video ? JSON.stringify(rec.video) : null
+		video: rec.video ? JSON.stringify(rec.video) : null,
+		backend: rec.backend ?? null,
+		execSeconds: rec.execSeconds ?? null
 	});
 	return json({ ok: true });
 };

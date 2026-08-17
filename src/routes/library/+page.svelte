@@ -8,6 +8,8 @@
 	import X from '@lucide/svelte/icons/x';
 	import { settings, history, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
+	import { billableSeconds, fmtCost, fmtCostTotal } from '$lib/cost';
+	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
 	import VideoModal from '$lib/components/VideoModal.svelte';
 	import TestPattern from '$lib/components/TestPattern.svelte';
 
@@ -26,6 +28,17 @@
 						.includes(query.trim().toLowerCase())
 				)
 			: history.value
+	);
+
+	const costSettings = $derived({
+		costPerHour: settings.value.runpodCostPerHour,
+		usdJpy: settings.value.usdJpy
+	});
+	/** 表示中の RunPod 生成の合計コスト */
+	const runpodTotal = $derived(
+		filtered
+			.filter((r) => r.backend === 'runpod')
+			.reduce((sum, r) => sum + billableSeconds(r), 0)
 	);
 
 	function openRecord(rec: HistoryRecord) {
@@ -57,6 +70,15 @@
 				Library
 			</h1>
 			<span class="font-mono text-[11px] text-faint">{filtered.length} 件</span>
+			{#if runpodTotal > 0}
+				<span
+					class="flex items-center gap-1 font-mono text-[11px] text-amber/80"
+					title="表示中の RunPod 生成の合計コスト概算"
+				>
+					<CircleDollarSign size={11} />
+					{fmtCostTotal(runpodTotal, costSettings)}
+				</span>
+			{/if}
 			<div class="relative ml-auto w-64">
 				<Search size={13} class="absolute top-1/2 left-3 -translate-y-1/2 text-faint" />
 				<input
@@ -142,6 +164,11 @@
 								<span>{rec.params.aspectRatio.split(' ')[0]}</span>
 								<span>{rec.params.megapixels}MP</span>
 								<span>{rec.params.duration}s</span>
+								{#if rec.backend === 'runpod'}
+									<span class="text-amber/80">
+										{fmtCost(billableSeconds(rec), costSettings)}
+									</span>
+								{/if}
 								<span class="ml-auto">
 									{new Date(rec.date).toLocaleString('ja-JP', {
 										year: '2-digit',

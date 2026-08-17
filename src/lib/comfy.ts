@@ -39,8 +39,15 @@ export async function submitWorkflow(
 export type PollState =
 	| { state: 'queued'; position: number }
 	| { state: 'running' }
-	| { state: 'done'; outputs: Record<string, Record<string, unknown>> }
+	| {
+			state: 'done';
+			outputs: Record<string, Record<string, unknown>>;
+			/** RunPod のワーカー実行秒数 (課金対象時間) */
+			execSeconds?: number | null;
+	  }
 	| { state: 'error'; message: string }
+	/** 中断されたジョブ (エラーではない) */
+	| { state: 'cancelled' }
 	| { state: 'unknown' };
 
 export async function pollStatus(target: BackendTarget, promptId: string): Promise<PollState> {

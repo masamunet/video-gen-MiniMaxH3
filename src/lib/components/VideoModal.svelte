@@ -4,6 +4,8 @@
 	import Download from '@lucide/svelte/icons/download';
 	import Maximize from '@lucide/svelte/icons/maximize';
 	import Timer from '@lucide/svelte/icons/timer';
+	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
+	import { billableSeconds, fmtCost } from '$lib/cost';
 	import { settings, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import TestPattern from './TestPattern.svelte';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
@@ -42,6 +44,18 @@
 						{record.video?.filename ?? '出力'}
 					</Dialog.Title>
 					<div class="flex shrink-0 items-center gap-2">
+						{#if record.backend === 'runpod'}
+							<span
+								class="flex items-center gap-1 rounded border border-amber/25 bg-amber/10 px-1.5 py-0.5 font-mono text-[11px] text-amber"
+								title="RunPod のコスト概算 (実行 {billableSeconds(record).toFixed(1)}秒)"
+							>
+								<CircleDollarSign size={11} />
+								{fmtCost(billableSeconds(record), {
+									costPerHour: settings.value.runpodCostPerHour,
+									usdJpy: settings.value.usdJpy
+								})}
+							</span>
+						{/if}
 						{#if record.seconds > 0}
 							<span class="flex items-center gap-1 font-mono text-[11px] text-mute">
 								<Timer size={12} class="text-amber" />{fmtSeconds(record.seconds)}

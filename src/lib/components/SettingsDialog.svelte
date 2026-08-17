@@ -2,6 +2,7 @@
 	import { Dialog } from 'bits-ui';
 	import X from '@lucide/svelte/icons/x';
 	import ServerCog from '@lucide/svelte/icons/server-cog';
+	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
 	import { settings, type Backend } from '$lib/stores.svelte';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
@@ -9,12 +10,16 @@
 	let draftHost = $state('');
 	let draftBackend = $state<Backend>('comfy');
 	let draftEndpointId = $state('');
+	let draftCostPerHour = $state(1.1);
+	let draftUsdJpy = $state(165);
 
 	$effect(() => {
 		if (open) {
 			draftHost = settings.value.host;
 			draftBackend = settings.value.backend ?? 'comfy';
 			draftEndpointId = settings.value.runpodEndpointId ?? '';
+			draftCostPerHour = settings.value.runpodCostPerHour ?? 1.1;
+			draftUsdJpy = settings.value.usdJpy ?? 165;
 		}
 	});
 
@@ -23,7 +28,9 @@
 			...settings.value,
 			host: draftHost.trim() || settings.value.host,
 			backend: draftBackend,
-			runpodEndpointId: draftEndpointId.trim()
+			runpodEndpointId: draftEndpointId.trim(),
+			runpodCostPerHour: Number(draftCostPerHour) || 0,
+			usdJpy: Number(draftUsdJpy) || 0
 		};
 		open = false;
 	}
@@ -96,6 +103,47 @@
 						</p>
 					</div>
 				{/if}
+
+				<!-- RunPod のコスト計算 (現在のバックエンドに関わらず履歴の表示に使う) -->
+				<div class="border-t border-edge pt-4">
+					<span class="mb-2 flex items-center gap-1.5 text-xs font-medium text-mute">
+						<CircleDollarSign size={13} class="text-amber" />
+						RunPod コスト計算
+					</span>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="mb-1.5 block text-[11px] text-faint" for="cost-input">
+								ワーカー単価 ($/hr)
+							</label>
+							<input
+								id="cost-input"
+								type="number"
+								class="field-input text-center font-mono text-[13px]"
+								min="0"
+								step="0.01"
+								bind:value={draftCostPerHour}
+								onkeydown={(e) => e.key === 'Enter' && save()}
+							/>
+						</div>
+						<div>
+							<label class="mb-1.5 block text-[11px] text-faint" for="jpy-input">
+								ドル円レート (¥/$)
+							</label>
+							<input
+								id="jpy-input"
+								type="number"
+								class="field-input text-center font-mono text-[13px]"
+								min="0"
+								step="0.1"
+								bind:value={draftUsdJpy}
+								onkeydown={(e) => e.key === 'Enter' && save()}
+							/>
+						</div>
+					</div>
+					<p class="mt-2 text-[11px] leading-relaxed text-faint">
+						RunPod 生成の動画に、ワーカーの実行時間から算出したコスト概算を表示します。
+					</p>
+				</div>
 			</div>
 
 			<div class="mt-5 flex justify-end gap-2">

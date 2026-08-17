@@ -22,6 +22,27 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	try {
+		// jobId 指定時: 実行中なら /interrupt、キュー待ちなら /queue から削除する
+		if (jobId) {
+			let running = false;
+			try {
+				const q = await fetch(comfyUrl(host, '/queue')).then((r) => r.json());
+				running = (q.queue_running ?? []).some((item: unknown[]) => item[1] === jobId);
+			} catch {
+				running = true; // 判定できないときは実行中とみなす
+			}
+			if (running) {
+				await fetch(comfyUrl(host, '/interrupt'), { method: 'POST' });
+			} else {
+				await fetch(comfyUrl(host, '/queue'), {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ delete: [jobId] })
+				});
+			}
+			return json({ ok: true });
+		}
+
 		await fetch(comfyUrl(host, '/interrupt'), { method: 'POST' });
 		return json({ ok: true });
 	} catch {

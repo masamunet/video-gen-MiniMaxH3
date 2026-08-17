@@ -11,57 +11,77 @@
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import History from '@lucide/svelte/icons/history';
+	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
+	import ListVideo from '@lucide/svelte/icons/list-video';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Clock from '@lucide/svelte/icons/clock';
+	import X from '@lucide/svelte/icons/x';
 
-	import { settings, params, history, pending, bossMode, type HistoryRecord } from '$lib/stores.svelte';
+	import { settings, params, history, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import { copyText } from '$lib/compat';
-	import { buildWorkflow, FALLBACK_ASPECT_RATIOS, type GenParams } from '$lib/workflow';
-	import {
-		submitWorkflow,
-		pollStatus,
-		interrupt,
-		parseOutputs,
-		videoUrl,
-		fetchResolutionOptions,
-		fmtSeconds,
-		targetFromSettings,
-		type BackendTarget
-	} from '$lib/comfy';
+	import { billableSeconds, fmtCost } from '$lib/cost';
+	import { FALLBACK_ASPECT_RATIOS } from '$lib/workflow';
+	import { videoUrl, fetchResolutionOptions, fmtSeconds } from '$lib/comfy';
+	import { queue, jobElapsed, MAX_BATCH } from '$lib/queue.svelte';
 	import VideoModal from '$lib/components/VideoModal.svelte';
 	import TestPattern from '$lib/components/TestPattern.svelte';
 
-	type Phase = 'idle' | 'submitting' | 'queued' | 'running' | 'done' | 'error';
-
 	const host = $derived(settings.value.host);
-	const target = $derived(targetFromSettings(settings.value));
 	const boss = $derived(bossMode.value);
 
-	/** pending に保存されたジョブの送信先 (旧データは comfy 扱い) */
-	function targetOfPending(p: { backend?: string; endpointId?: string; host?: string }): BackendTarget {
-		return p.backend === 'runpod'
-			? { backend: 'runpod', host: p.host ?? settings.value.host, endpointId: p.endpointId ?? '' }
-			: { backend: 'comfy', host: p.host ?? settings.value.host, endpointId: '' };
-	}
+	/** 同時に投入する本数 (ComfyUI の Batch Count 相当) */
+	let batchCount = $state(1);
+	let submitting = $state(false);
 
-	let phase = $state<Phase>('idle');
-	let queuePos = $state(0);
-	let errorMsg = $state('');
-	let elapsed = $state(0);
-	let startTime = 0;
-	let ticker: ReturnType<typeof setInterval> | undefined;
-	let pollToken = 0;
+	const activeJobs = $derived(queue.list);
+	const busy = $derived(activeJobs.length > 0 || submitting);
+	const runningJob = $derived(activeJobs.find((j) => j.state === 'running') ?? activeJobs[0]);
+	const errorMsg = $derived(queue.error);
 
 	let viewRecord = $state<HistoryRecord | null>(history.value[0] ?? null);
 
 	// 履歴のロード完了後、未表示なら最新の結果を出力ペインに表示する
 	$effect(() => {
-		if (history.loaded && !viewRecord && phase === 'idle') {
+		if (history.loaded && !viewRecord && !busy) {
 			viewRecord = history.value[0] ?? null;
 		}
+	});
+	// ジョブが完了するたびに出力ペインを最新の結果に切り替える
+	$effect(() => {
+		const done = queue.lastCompleted;
+		if (done) viewRecord = done;
 	});
 	let modalOpen = $state(false);
 	let copied = $state(false);
 
-	const busy = $derived(phase === 'submitting' || phase === 'queued' || phase === 'running');
+	// ── 出力ペインのカルーセル (履歴を新しい順にたどる) ──
+	const viewIndex = $derived(
+		viewRecord ? history.value.findIndex((r) => r.id === viewRecord!.id) : -1
+	);
+	const canPrev = $derived(viewIndex > 0); // より新しい方へ
+	const canNext = $derived(viewIndex >= 0 && viewIndex < history.value.length - 1);
+
+	function showPrev() {
+		if (canPrev) viewRecord = history.value[viewIndex - 1];
+	}
+	function showNext() {
+		if (canNext) viewRecord = history.value[viewIndex + 1];
+	}
+
+	/** 直近の投入で生成された何本目かを示す (バッチが複数本のときだけ) */
+	const batchPos = $derived(
+		viewRecord ? queue.batch.findIndex((r) => r.id === viewRecord!.id) : -1
+	);
+
+	// ←→ キーでも切り替えられるようにする (入力欄にフォーカスがあるときは無効)
+	function onKeydown(e: KeyboardEvent) {
+		const el = e.target as HTMLElement | null;
+		if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+		if (modalOpen) return;
+		if (e.key === 'ArrowLeft') showPrev();
+		else if (e.key === 'ArrowRight') showNext();
+	}
 
 	// ── 選択肢を ComfyUI 本体から取得(API JSONと必ず一致させる) ──
 	let aspectOptions = $state<string[]>(FALLBACK_ASPECT_RATIOS);
@@ -92,122 +112,18 @@
 		});
 	});
 
-	// ── 生成 ──
-	function startTicker() {
-		stopTicker();
-		ticker = setInterval(() => (elapsed = (performance.now() - startTime) / 1000), 100);
-	}
-	function stopTicker() {
-		if (ticker) clearInterval(ticker);
-		ticker = undefined;
-	}
-	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
+	// ── 生成 (ComfyUI の Batch Count と同じく N 件をキューに積む) ──
 	async function generate() {
-		if (busy || !params.value.prompt.trim()) return;
-		errorMsg = '';
-		phase = 'submitting';
-		elapsed = 0;
-		startTime = performance.now();
-		startTicker();
-
-		const snapshot = $state.snapshot(params.value);
-		const tgt = target;
-		const res = await submitWorkflow(tgt, buildWorkflow(snapshot));
-		if (res.error || !res.prompt_id) {
-			fail(res.error ?? '送信に失敗しました');
-			return;
-		}
-
-		pending.value = {
-			id: res.prompt_id,
-			params: snapshot,
-			startedAt: Date.now(),
-			backend: tgt.backend,
-			endpointId: tgt.endpointId,
-			host: tgt.host
-		};
-		await pollLoop(res.prompt_id, snapshot, tgt);
-	}
-
-	async function pollLoop(id: string, snapshot: GenParams, tgt: BackendTarget) {
-		const token = ++pollToken;
-		phase = 'queued';
-		queuePos = 0;
-		let unknownCount = 0;
-
-		while (token === pollToken) {
-			await sleep(1500);
-			if (token !== pollToken) return;
-			const st = await pollStatus(tgt, id);
-			if (token !== pollToken) return;
-
-			if (st.state === 'done') {
-				const seconds = Math.round(((performance.now() - startTime) / 1000) * 10) / 10;
-				stopTicker();
-				pending.value = null;
-				const parsed = parseOutputs(st.outputs);
-				const record: HistoryRecord = {
-					id,
-					date: Date.now(),
-					params: snapshot,
-					jpPrompt: parsed.jpPrompt,
-					enPrompt: parsed.enPrompt,
-					seconds,
-					video: parsed.video
-				};
-				history.add(record);
-				viewRecord = record;
-				phase = 'done';
-				return;
-			}
-			if (st.state === 'error') {
-				fail(st.message);
-				return;
-			}
-			if (st.state === 'queued') {
-				phase = 'queued';
-				queuePos = st.position;
-			} else if (st.state === 'running') {
-				phase = 'running';
-			}
-			// history にもキューにも見つからない状態が続いたら諦める
-			// (ComfyUI 再起動などでジョブが消えたケース)
-			unknownCount = st.state === 'unknown' ? unknownCount + 1 : 0;
-			if (unknownCount >= 5) {
-				fail('ジョブが見つかりませんでした (ComfyUI が再起動された可能性があります)');
-				return;
-			}
+		if (submitting || !params.value.prompt.trim()) return;
+		submitting = true;
+		try {
+			await queue.submit($state.snapshot(params.value), batchCount);
+		} finally {
+			submitting = false;
 		}
 	}
 
-	// リロードで中断された実行中ジョブのポーリングを再開する
-	$effect(() => {
-		const p = pending.value && $state.snapshot(pending.value);
-		if (!p || busy) return;
-		const alreadyElapsed = Math.max(0, Date.now() - p.startedAt);
-		startTime = performance.now() - alreadyElapsed;
-		elapsed = alreadyElapsed / 1000;
-		startTicker();
-		pollLoop(p.id, p.params, targetOfPending(p));
-	});
-
-	function fail(msg: string) {
-		stopTicker();
-		pollToken++;
-		pending.value = null;
-		phase = 'error';
-		errorMsg = msg;
-	}
-
-	async function cancel() {
-		pollToken++;
-		stopTicker();
-		const p = pending.value && $state.snapshot(pending.value);
-		pending.value = null;
-		phase = 'idle';
-		await interrupt(p ? targetOfPending(p) : target, p?.id);
-	}
+	const cancelAll = () => queue.cancelAll();
 
 	function restoreParams(record: HistoryRecord) {
 		params.value = { ...record.params };
@@ -233,24 +149,40 @@
 	}
 
 	const recent = $derived(history.value.slice(0, 12));
-	const phaseLabel = $derived(
-		phase === 'submitting'
+	/** 下ペインのタブ */
+	let bottomTab = $state<'history' | 'queue'>('history');
+	// 0件→投入でキュータブへ、空になったら履歴へ。
+	// 途中の完了では切り替えない (手動でタブを選んだ状態を尊重する)
+	let prevJobCount = 0;
+	$effect(() => {
+		const n = activeJobs.length;
+		if (prevJobCount === 0 && n > 0) bottomTab = 'queue';
+		else if (n === 0 && prevJobCount > 0) bottomTab = 'history';
+		prevJobCount = n;
+	});
+
+	function jobLabel(state: string, position: number): string {
+		if (state === 'running') return '生成中';
+		return position > 0 ? `キュー待ち #${position}` : 'キュー待ち';
+	}
+
+	const headLabel = $derived(
+		submitting
 			? '送信中…'
-			: phase === 'queued'
-				? queuePos > 0
-					? `キュー待ち #${queuePos}`
-					: 'キュー待ち'
+			: runningJob
+				? jobLabel(runningJob.state, runningJob.position)
 				: '生成中'
 	);
+	const headElapsed = $derived(runningJob ? jobElapsed(runningJob, queue.now) : 0);
 
 	// ブラウザタブで進捗が分かるようにタイトルを動的に更新する
 	const tabTitle = $derived(
 		busy
-			? `⏳ ${phaseLabel} ${Math.floor(elapsed)}s | MiniMax H3`
-			: phase === 'done'
-				? `✅ 生成完了 (${fmtSeconds(viewRecord?.seconds ?? 0)}) | MiniMax H3`
-				: phase === 'error'
-					? '⚠️ 生成エラー | MiniMax H3'
+			? `⏳ ${headLabel}${activeJobs.length > 1 ? ` (残${activeJobs.length}件)` : ''} ${Math.floor(headElapsed)}s | MiniMax H3`
+			: errorMsg
+				? '⚠️ 生成エラー | MiniMax H3'
+				: viewRecord
+					? `✅ 生成完了 (${fmtSeconds(viewRecord.seconds)}) | MiniMax H3`
 					: 'MiniMax H3 Studio'
 	);
 </script>
@@ -258,6 +190,8 @@
 <svelte:head>
 	<title>{tabTitle}</title>
 </svelte:head>
+
+<svelte:window onkeydown={onKeydown} />
 
 <!-- 列を minmax(0,1fr) で固定しないと、履歴が増えたときにグリッドごと横に広がってページに横スクロールが出る -->
 <main class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
@@ -406,32 +340,86 @@
 					</div>
 				</div>
 
-				<!-- 生成ボタン -->
-				{#if busy}
-					<button
-						class="flex items-center justify-center gap-2 rounded-xl border border-rec/40 bg-rec/10 py-3 text-sm font-semibold text-rec transition-colors hover:bg-rec/20"
-						onclick={cancel}
+				<!-- 生成回数 (ComfyUI の Batch Count 相当) -->
+				<div>
+					<label class="mb-1.5 block text-xs font-medium text-mute" for="batch">
+						生成回数
+						<span class="ml-1 font-mono text-amber">{batchCount}</span>
+						<span class="ml-1 font-normal text-faint">回ぶんキューに積む</span>
+					</label>
+					<div class="flex items-center gap-2">
+						<input
+							id="batch"
+							type="range"
+							class="fader flex-1"
+							min="1"
+							max={MAX_BATCH}
+							step="1"
+							bind:value={batchCount}
+							style={fill(batchCount, 1, MAX_BATCH)}
+						/>
+						<input
+							type="number"
+							class="field-input w-14 px-1 text-center font-mono text-xs"
+							min="1"
+							max={MAX_BATCH}
+							step="1"
+							bind:value={batchCount}
+						/>
+					</div>
+				</div>
+
+				<!-- 生成ボタン (実行中でも追加投入できる) -->
+				<button
+					class="group flex items-center justify-center gap-2 rounded-xl bg-amber py-3 text-sm font-bold text-black shadow-[0_0_24px_rgb(255_178_36/0.25)] transition-all hover:bg-amber/90 hover:shadow-[0_0_32px_rgb(255_178_36/0.4)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+					onclick={generate}
+					disabled={!params.value.prompt.trim() || submitting}
+				>
+					<Sparkles size={16} class="transition-transform group-hover:rotate-12" />
+					{submitting
+						? '送信中…'
+						: batchCount > 1
+							? `${batchCount}件をキューに追加`
+							: activeJobs.length > 0
+								? 'キューに追加'
+								: '動画を生成'}
+				</button>
+
+				{#if activeJobs.length > 0}
+					<div
+						class="flex items-center gap-2 rounded-xl border border-edge bg-well/60 px-3 py-2 text-[11px]"
 					>
-						<CircleStop size={16} />
-						中断する
-					</button>
-				{:else}
-					<button
-						class="group flex items-center justify-center gap-2 rounded-xl bg-amber py-3 text-sm font-bold text-black shadow-[0_0_24px_rgb(255_178_36/0.25)] transition-all hover:bg-amber/90 hover:shadow-[0_0_32px_rgb(255_178_36/0.4)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-						onclick={generate}
-						disabled={!params.value.prompt.trim()}
-					>
-						<Sparkles size={16} class="transition-transform group-hover:rotate-12" />
-						動画を生成
-					</button>
+						<span class="rec-dot inline-block size-2 shrink-0 rounded-full bg-rec"></span>
+						<span class="text-mute">
+							<span class="font-mono text-ink">{activeJobs.length}</span> 件実行中
+							{#if activeJobs.filter((j) => j.state === 'queued').length > 0}
+								<span class="text-faint">
+									(待機 {activeJobs.filter((j) => j.state === 'queued').length})
+								</span>
+							{/if}
+						</span>
+						<button
+							class="ml-auto flex items-center gap-1 rounded-lg border border-rec/30 px-2 py-1 font-medium text-rec transition-colors hover:bg-rec/10"
+							onclick={cancelAll}
+						>
+							<CircleStop size={12} />全キャンセル
+						</button>
+					</div>
 				{/if}
 
-				{#if phase === 'error'}
+				{#if errorMsg}
 					<div
 						class="fade-up flex items-start gap-2 rounded-lg border border-rec/30 bg-rec/10 p-3 text-xs leading-relaxed text-rec"
 					>
 						<TriangleAlert size={14} class="mt-0.5 shrink-0" />
-						<span class="break-all">{errorMsg}</span>
+						<span class="min-w-0 flex-1 break-all">{errorMsg}</span>
+						<button
+							class="shrink-0 rounded p-0.5 transition-colors hover:bg-rec/20"
+							onclick={() => (queue.error = '')}
+							title="閉じる"
+						>
+							<X size={13} />
+						</button>
 					</div>
 				{/if}
 			</div>
@@ -446,20 +434,39 @@
 				{#if busy}
 					<span class="ml-auto flex items-center gap-2 font-mono text-[11px] text-amber">
 						<span class="rec-dot inline-block size-2 rounded-full bg-rec"></span>
-						{phaseLabel}
-						<span class="tabular-nums text-ink">{elapsed.toFixed(1)}s</span>
+						{headLabel}
+						{#if activeJobs.length > 1}
+							<span class="text-mute">残{activeJobs.length}件</span>
+						{/if}
+						<span class="tabular-nums text-ink">{headElapsed.toFixed(1)}s</span>
 					</span>
 				{:else if viewRecord}
-					<span class="ml-auto flex items-center gap-1 font-mono text-[11px] text-mute">
-						<Timer size={12} class="text-amber" />
-						{fmtSeconds(viewRecord.seconds)}
+					<span class="ml-auto flex items-center gap-2 font-mono text-[11px] text-mute">
+						{#if viewRecord.backend === 'runpod'}
+							<span
+								class="flex items-center gap-1 rounded border border-amber/25 bg-amber/10 px-1.5 py-0.5 text-amber"
+								title="RunPod のコスト概算 (実行 {billableSeconds(viewRecord).toFixed(
+									1
+								)}秒 × ${settings.value.runpodCostPerHour}/hr)"
+							>
+								<CircleDollarSign size={11} />
+								{fmtCost(billableSeconds(viewRecord), {
+									costPerHour: settings.value.runpodCostPerHour,
+									usdJpy: settings.value.usdJpy
+								})}
+							</span>
+						{/if}
+						<span class="flex items-center gap-1">
+							<Timer size={12} class="text-amber" />
+							{fmtSeconds(viewRecord.seconds)}
+						</span>
 					</span>
 				{/if}
 			</div>
 
 			<div class="flex min-h-0 flex-1 flex-col">
-				{#if busy}
-					<!-- 生成中 -->
+				{#if busy && !viewRecord}
+					<!-- 生成中 (まだ表示できる結果がないとき) -->
 					<div class="flex min-h-0 flex-1 items-center justify-center p-8">
 						<div
 							class="relative flex aspect-video w-full max-w-xl items-center justify-center overflow-hidden rounded-xl border border-edge bg-well"
@@ -470,16 +477,47 @@
 							></div>
 							<div class="relative z-10 flex flex-col items-center gap-3">
 								<span class="rec-dot size-3 rounded-full bg-rec shadow-[0_0_12px_var(--color-rec)]"></span>
-								<p class="font-mono text-sm tracking-widest text-mute">{phaseLabel}</p>
+								<p class="font-mono text-sm tracking-widest text-mute">
+									{headLabel}{activeJobs.length > 1 ? ` · 残${activeJobs.length}件` : ''}
+								</p>
 								<p class="font-mono text-3xl font-semibold tabular-nums text-ink">
-									{elapsed.toFixed(1)}<span class="ml-1 text-base text-faint">s</span>
+									{headElapsed.toFixed(1)}<span class="ml-1 text-base text-faint">s</span>
 								</p>
 							</div>
 						</div>
 					</div>
 				{:else if viewRecord}
-					<!-- 結果表示 -->
-					<div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-5">
+					<!-- 結果表示 (複数件あるときは前後に送れるカルーセル) -->
+					<div class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-5">
+						{#if history.value.length > 1}
+							<button
+								class="absolute top-1/2 left-2 z-10 -translate-y-1/2 rounded-full border border-edge bg-panel/85 p-2 text-mute backdrop-blur transition-all hover:border-edge2 hover:text-ink disabled:pointer-events-none disabled:opacity-0"
+								onclick={showPrev}
+								disabled={!canPrev}
+								title="新しい方へ (←)"
+								aria-label="前の動画"
+							>
+								<ChevronLeft size={18} />
+							</button>
+							<button
+								class="absolute top-1/2 right-2 z-10 -translate-y-1/2 rounded-full border border-edge bg-panel/85 p-2 text-mute backdrop-blur transition-all hover:border-edge2 hover:text-ink disabled:pointer-events-none disabled:opacity-0"
+								onclick={showNext}
+								disabled={!canNext}
+								title="古い方へ (→)"
+								aria-label="次の動画"
+							>
+								<ChevronRight size={18} />
+							</button>
+							<span
+								class="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border border-edge bg-panel/85 px-2.5 py-0.5 font-mono text-[10px] text-mute backdrop-blur"
+							>
+								{#if queue.batch.length > 1 && batchPos >= 0}
+									<span class="text-amber">今回の生成 {batchPos + 1}/{queue.batch.length}</span>
+								{:else}
+									{viewIndex + 1} / {history.value.length}
+								{/if}
+							</span>
+						{/if}
 						{#if viewRecord.video && boss}
 							<!-- ボスが来たモード: 動画の代わりに試験パターン -->
 							<div class="h-full w-full overflow-hidden rounded-xl border border-edge">
@@ -586,19 +624,93 @@
 		</section>
 	</div>
 
-	<!-- ══════════ 下: 履歴 ══════════ -->
+	<!-- ══════════ 下: 履歴 / キュー ══════════ -->
 	<footer class="min-w-0 shrink-0 border-t border-edge bg-panel/60">
-		<div class="flex items-center gap-2 px-5 pt-2.5 pb-1.5">
-			<History size={12} class="text-faint" />
-			<span class="font-mono text-[10px] font-semibold tracking-[0.25em] text-faint uppercase">
-				Recent
-			</span>
-			{#if history.value.length > 0}
+		<div class="flex items-center gap-1 px-5 pt-2 pb-1.5">
+			<button
+				class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors
+				{bottomTab === 'history' ? 'bg-panel2 text-ink' : 'text-faint hover:text-mute'}"
+				onclick={() => (bottomTab = 'history')}
+			>
+				<History size={12} />Recent
+			</button>
+			<button
+				class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors
+				{bottomTab === 'queue' ? 'bg-panel2 text-ink' : 'text-faint hover:text-mute'}"
+				onclick={() => (bottomTab = 'queue')}
+			>
+				<ListVideo size={12} />Queue
+				{#if activeJobs.length > 0}
+					<span class="rounded-full bg-amber px-1.5 text-[9px] font-bold text-black">
+						{activeJobs.length}
+					</span>
+				{/if}
+			</button>
+			{#if bottomTab === 'history' && history.value.length > 0}
 				<a href="/library" class="ml-auto text-[11px] text-mute transition-colors hover:text-amber">
 					すべて見る →
 				</a>
+			{:else if bottomTab === 'queue' && activeJobs.length > 0}
+				<button
+					class="ml-auto flex items-center gap-1 text-[11px] text-mute transition-colors hover:text-rec"
+					onclick={cancelAll}
+				>
+					<CircleStop size={12} />全キャンセル
+				</button>
 			{/if}
 		</div>
+
+		{#if bottomTab === 'queue'}
+			<!-- キュー一覧 -->
+			<div class="flex gap-3 overflow-x-auto px-5 pt-1 pb-3.5">
+				{#if activeJobs.length === 0}
+					<p class="py-4 text-xs text-faint">キューは空です</p>
+				{:else}
+					{#each activeJobs as job (job.id)}
+						<div
+							class="w-52 shrink-0 rounded-lg border p-2.5
+							{job.state === 'running' ? 'border-amber/40 bg-amber/5' : 'border-edge bg-panel'}"
+						>
+							<div class="flex items-center gap-1.5">
+								{#if job.state === 'running'}
+									<span class="rec-dot size-2 shrink-0 rounded-full bg-rec"></span>
+								{:else}
+									<Clock size={11} class="shrink-0 text-faint" />
+								{/if}
+								<span
+									class="font-mono text-[10px] {job.state === 'running'
+										? 'text-amber'
+										: 'text-mute'}"
+								>
+									{jobLabel(job.state, job.position)}
+								</span>
+								{#if job.total > 1}
+									<span class="font-mono text-[9px] text-faint">{job.index}/{job.total}</span>
+								{/if}
+								<button
+									class="ml-auto rounded p-0.5 text-faint transition-colors hover:bg-rec/15 hover:text-rec"
+									onclick={() => queue.cancel(job.id)}
+									title="このジョブをキャンセル"
+								>
+									<X size={12} />
+								</button>
+							</div>
+							<p class="mt-1 truncate text-[11px] text-ink/85" title={job.params.prompt}>
+								{job.params.prompt || '(プロンプトなし)'}
+							</p>
+							<div class="mt-1 flex items-center gap-2 font-mono text-[9px] text-faint">
+								<span class="tabular-nums text-mute">
+									{jobElapsed(job, queue.now).toFixed(0)}s
+								</span>
+								<span>{job.params.megapixels}MP</span>
+								<span>{job.params.duration}s</span>
+								<span class="ml-auto">{job.backend === 'runpod' ? 'RunPod' : 'Desktop'}</span>
+							</div>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		{:else}
 		<div class="flex gap-3 overflow-x-auto px-5 pt-1 pb-3.5">
 			{#if recent.length === 0}
 				<p class="py-4 text-xs text-faint">まだ生成履歴がありません</p>
@@ -654,6 +766,7 @@
 				{/each}
 			{/if}
 		</div>
+		{/if}
 	</footer>
 </main>
 

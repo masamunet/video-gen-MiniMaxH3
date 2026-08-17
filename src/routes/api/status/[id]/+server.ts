@@ -41,7 +41,12 @@ export const GET: RequestHandler = async ({ params, url }) => {
 							subfolder: '',
 							type: 'local'
 						}));
-					return json({ state: 'done', outputs: { '150': { images: files } } });
+					// executionTime はワーカーの実行時間 (ms) = 課金対象時間
+					return json({
+						state: 'done',
+						outputs: { '150': { images: files } },
+						execSeconds: typeof d.executionTime === 'number' ? d.executionTime / 1000 : null
+					});
 				}
 				case 'FAILED':
 				case 'CANCELLED':
@@ -70,11 +75,15 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			if (entry) {
 				const statusStr = entry.status?.status_str;
 				if (statusStr === 'error') {
-					const messages = (entry.status?.messages ?? [])
-						.filter((m: [string, unknown]) => m[0] === 'execution_error')
-						.map((m: [string, { exception_message?: string; node_type?: string }]) =>
-							[m[1]?.node_type, m[1]?.exception_message].filter(Boolean).join(': ')
-						)
+					const msgs: [string, Record<string, string>][] = entry.status?.messages ?? [];
+					// ComfyUI は中断されたジョブも status_str='error' として記録するため、
+					// 実行エラーとは区別して返す
+					if (msgs.some((m) => m[0] === 'execution_interrupted')) {
+						return json({ state: 'cancelled' });
+					}
+					const messages = msgs
+						.filter((m) => m[0] === 'execution_error')
+						.map((m) => [m[1]?.node_type, m[1]?.exception_message].filter(Boolean).join(': '))
 						.join(' / ');
 					return json({ state: 'error', message: messages || '実行中にエラーが発生しました' });
 				}

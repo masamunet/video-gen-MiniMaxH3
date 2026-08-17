@@ -21,6 +21,8 @@ export interface HistoryRow {
 	enPrompt: string;
 	seconds: number;
 	video: string | null; // VideoFile JSON
+	backend: string | null;
+	execSeconds: number | null;
 }
 
 const DATA_DIR = path.resolve('data');
@@ -39,7 +41,9 @@ db.exec(`
 		jpPrompt TEXT NOT NULL DEFAULT '',
 		enPrompt TEXT NOT NULL DEFAULT '',
 		seconds REAL NOT NULL DEFAULT 0,
-		video TEXT
+		video TEXT,
+		backend TEXT,
+		execSeconds REAL
 	);
 	CREATE INDEX IF NOT EXISTS idx_history_date ON history(date DESC);
 	CREATE TABLE IF NOT EXISTS recipes (
@@ -55,9 +59,19 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_recipes_updated ON recipes(favorite DESC, updatedAt DESC);
 `);
 
+// 既存 DB (backend / execSeconds を持たない頃のもの) にカラムを足す
+{
+	const cols = (db.prepare('PRAGMA table_info(history)').all() as { name: string }[]).map(
+		(c) => c.name
+	);
+	if (!cols.includes('backend')) db.exec('ALTER TABLE history ADD COLUMN backend TEXT');
+	if (!cols.includes('execSeconds')) db.exec('ALTER TABLE history ADD COLUMN execSeconds REAL');
+}
+
 const insertStmt = db.prepare(`
-	INSERT OR REPLACE INTO history (id, date, params, jpPrompt, enPrompt, seconds, video)
-	VALUES (@id, @date, @params, @jpPrompt, @enPrompt, @seconds, @video)
+	INSERT OR REPLACE INTO history
+		(id, date, params, jpPrompt, enPrompt, seconds, video, backend, execSeconds)
+	VALUES (@id, @date, @params, @jpPrompt, @enPrompt, @seconds, @video, @backend, @execSeconds)
 `);
 const listStmt = db.prepare('SELECT * FROM history ORDER BY date DESC');
 const deleteStmt = db.prepare('DELETE FROM history WHERE id = ?');

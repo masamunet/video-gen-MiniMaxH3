@@ -3,7 +3,7 @@ import { DEFAULT_PARAMS, type GenParams } from './workflow';
 import { DEFAULT_BUILDER, normalizeBuilder, type BuilderData } from './promptBuilder';
 
 /** localStorage に自動保存されるリアクティブな値 */
-class Persisted<T> {
+export class Persisted<T> {
 	value = $state() as T;
 
 	constructor(key: string, initial: T) {
@@ -42,6 +42,10 @@ export interface Settings {
 	backend: Backend;
 	/** RunPod Serverless の Endpoint ID (API キーはサーバー側の環境変数 RUNPOD_API_KEY) */
 	runpodEndpointId: string;
+	/** RunPod ワーカーの時間単価 (USD/hr) */
+	runpodCostPerHour: number;
+	/** ドル円レート */
+	usdJpy: number;
 }
 
 export interface VideoFile {
@@ -58,31 +62,73 @@ export interface HistoryRecord {
 	jpPrompt: string;
 	/** 翻訳・タグ復元後の最終英語プロンプト */
 	enPrompt: string;
-	/** 生成にかかった秒数 */
+	/** 生成にかかった秒数 (送信から完了までの実測) */
 	seconds: number;
 	video: VideoFile | null;
+	/** 生成に使ったバックエンド (旧データは undefined = comfy) */
+	backend?: Backend;
+	/** RunPod のワーカー実行秒数 (課金対象時間。RunPod 生成時のみ) */
+	execSeconds?: number | null;
 }
 
 export const settings = new Persisted<Settings>('vg:settings', {
 	host: 'http://localhost:8000/',
 	backend: 'comfy',
-	runpodEndpointId: 'your-runpod-endpoint-id'
+	runpodEndpointId: 'your-runpod-endpoint-id',
+	runpodCostPerHour: 1.1,
+	usdJpy: 165
 });
 
 export const params = new Persisted<GenParams>('vg:params', DEFAULT_PARAMS);
 
-/** 実行中ジョブ。リロードしてもポーリングを再開できるよう永続化する */
-export interface PendingJob {
+/**
+ * キューに積まれた生成ジョブ。リロードしてもポーリングを再開できるよう永続化する。
+ * ComfyUI の Batch Count と同様、1回の操作で複数ジョブを投入できる。
+ */
+export interface QueueJob {
 	id: string;
 	params: GenParams;
 	startedAt: number;
-	/** 送信先バックエンド (旧データは undefined = comfy) */
-	backend?: Backend;
-	endpointId?: string;
-	host?: string;
+	backend: Backend;
+	endpointId: string;
+	host: string;
+	state: 'queued' | 'running';
+	/** ComfyUI のキュー待ち順 (0 なら不明) */
+	position: number;
+	/** 同時投入したバッチ内の位置 (1 始まり) と総数 */
+	index: number;
+	total: number;
 }
 
-export const pending = new Persisted<PendingJob | null>('vg:pending', null);
+export const jobs = new Persisted<QueueJob[]>('vg:jobs', []);
+
+// 旧形式 (単一の実行中ジョブ) が残っていればキューへ移す
+if (browser) {
+	try {
+		const raw = localStorage.getItem('vg:pending');
+		const old = raw ? JSON.parse(raw) : null;
+		if (old?.id && !jobs.value.some((j) => j.id === old.id)) {
+			jobs.value = [
+				...jobs.value,
+				{
+					id: old.id,
+					params: old.params,
+					startedAt: old.startedAt ?? Date.now(),
+					backend: old.backend ?? 'comfy',
+					endpointId: old.endpointId ?? '',
+					host: old.host ?? '',
+					state: 'queued',
+					position: 0,
+					index: 1,
+					total: 1
+				}
+			];
+		}
+		if (raw) localStorage.removeItem('vg:pending');
+	} catch {
+		// 壊れた保存値は無視
+	}
+}
 
 /** プロンプトビルダーの下書き (前回を記憶)。旧形式の保存値は正規化して読み込む */
 export const builder = new Persisted<BuilderData>('vg:builder', DEFAULT_BUILDER);
