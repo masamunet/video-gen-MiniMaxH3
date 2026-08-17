@@ -74,6 +74,16 @@ export function deleteHistory(id: string): void {
 	deleteStmt.run(id);
 }
 
+/** 履歴をまとめて削除する (ComfyUI サーバー上の動画ファイルは消さない) */
+export function deleteHistoryMany(ids: string[]): number {
+	const run = db.transaction((list: string[]) => {
+		let n = 0;
+		for (const id of list) n += deleteStmt.run(id).changes;
+		return n;
+	});
+	return run(ids);
+}
+
 // ── レシピ (プロンプトビルダー) ──
 
 export interface RecipeRow {

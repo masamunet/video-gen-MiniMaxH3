@@ -134,6 +134,18 @@ class HistoryStore {
 		this.value = this.value.filter((r) => r.id !== id);
 		fetch(`/api/history/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
 	}
+
+	/** まとめて削除する (ComfyUI サーバー上の動画ファイルは残る) */
+	removeMany(ids: string[]) {
+		if (ids.length === 0) return;
+		const set = new Set(ids);
+		this.value = this.value.filter((r) => !set.has(r.id));
+		fetch('/api/history', {
+			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ids })
+		}).catch(() => {});
+	}
 }
 
 export const history = new HistoryStore();

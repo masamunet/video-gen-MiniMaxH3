@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { Dialog } from 'bits-ui';
 	import Clapperboard from '@lucide/svelte/icons/clapperboard';
 	import Play from '@lucide/svelte/icons/play';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Search from '@lucide/svelte/icons/search';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import X from '@lucide/svelte/icons/x';
 	import { settings, history, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
 	import VideoModal from '$lib/components/VideoModal.svelte';
@@ -36,6 +39,15 @@
 			history.remove(rec.id);
 		}
 	}
+
+	// ── 一括削除 (検索中は絞り込み結果のみが対象) ──
+	let bulkOpen = $state(false);
+	const isFiltered = $derived(query.trim().length > 0);
+
+	function bulkDelete() {
+		history.removeMany(filtered.map((r) => r.id));
+		bulkOpen = false;
+	}
 </script>
 
 <main class="min-h-0 flex-1 overflow-y-auto">
@@ -53,6 +65,15 @@
 					bind:value={query}
 				/>
 			</div>
+			<button
+				class="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-[11px] font-medium text-mute transition-colors hover:border-rec/40 hover:bg-rec/10 hover:text-rec disabled:cursor-not-allowed disabled:opacity-40"
+				onclick={() => (bulkOpen = true)}
+				disabled={filtered.length === 0}
+				title={isFiltered ? '検索結果の履歴をまとめて削除' : 'すべての履歴を削除'}
+			>
+				<Trash2 size={13} />
+				{isFiltered ? '検索結果を削除' : '一括削除'}
+			</button>
 		</div>
 
 		{#if filtered.length === 0}
@@ -140,3 +161,54 @@
 </main>
 
 <VideoModal bind:open={modalOpen} record={selected} />
+
+<!-- 一括削除の確認 -->
+<Dialog.Root bind:open={bulkOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
+		<Dialog.Content
+			class="fade-up fixed top-1/2 left-1/2 z-50 w-[min(460px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-edge bg-panel p-6 shadow-2xl shadow-black/60"
+		>
+			<div class="mb-3 flex items-center justify-between">
+				<Dialog.Title
+					class="flex items-center gap-2 font-mono text-sm font-semibold tracking-widest text-ink uppercase"
+				>
+					<TriangleAlert size={16} class="text-rec" />
+					一括削除の確認
+				</Dialog.Title>
+				<Dialog.Close
+					class="rounded-md p-1 text-mute transition-colors hover:bg-panel2 hover:text-ink"
+					aria-label="閉じる"
+				>
+					<X size={16} />
+				</Dialog.Close>
+			</div>
+
+			<p class="text-[13px] leading-relaxed text-mute">
+				{#if isFiltered}
+					検索「<span class="text-ink">{query.trim()}</span>」に一致する
+					<span class="font-mono text-rec">{filtered.length}</span> 件の履歴を削除します。
+				{:else}
+					<span class="font-mono text-rec">{filtered.length}</span> 件すべての履歴を削除します。
+				{/if}
+			</p>
+			<p class="mt-1.5 text-[11px] leading-relaxed text-faint">
+				この操作は取り消せません。ComfyUI サーバー上の動画ファイルは削除されず、アプリの履歴だけが消えます。
+			</p>
+
+			<div class="mt-5 flex justify-end gap-2">
+				<Dialog.Close
+					class="rounded-lg border border-edge px-4 py-2 text-xs font-medium text-mute transition-colors hover:border-edge2 hover:text-ink"
+				>
+					キャンセル
+				</Dialog.Close>
+				<button
+					class="flex items-center gap-1.5 rounded-lg bg-rec px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-rec/85"
+					onclick={bulkDelete}
+				>
+					<Trash2 size={13} />{filtered.length} 件を削除
+				</button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
