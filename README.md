@@ -25,7 +25,7 @@ SvelteKit (Svelte 5 runes) + Tailwind CSS v4 + bits-ui + Lucide アイコンで�
 - ComfyUI ホストは設定ダイアログで変更可能（既定: `http://localhost:8000/`）
 - **API サーバーの切り替え**: 設定でデスクトップマシン (ComfyUI) と **RunPod Serverless** をセレクトボックスで選択可能
   - RunPod には `{input:{workflow}}` 形式でワークフローを送信し、`/status` をポーリング。完了時は `output.images[].data` (base64) の動画を `data/videos/` に保存してアプリから配信する
-  - API キーは設定画面には置かず、**サーバーの環境変数 `RUNPOD_API_KEY`** で渡す（例: `RUNPOD_API_KEY=... node build`）。未設定のまま生成すると画面にその旨のエラーが出る
+  - API キーは設定画面には置かず、**環境変数 `RUNPOD_API_KEY`** で渡す（`.env.example` をコピーして `.env` を作成。開発サーバーは自動で読み込む。本番は `node --env-file=.env build`）。未設定のまま生成すると画面にその旨のエラーが出る
   - Endpoint ID は設定ダイアログで変更可能（既定: `your-runpod-endpoint-id`）
   - RunPod ワーカーは動画のみを返すため、最終プロンプト（日本語/英語）の表示は RunPod 生成では取得できない（履歴には入力プロンプトが表示される）
 - **ボスが来たモード**: 左上のロゴをクリックすると ON になり、すべての動画 (出力・履歴・ライブラリ・モーダル) がグレーのプレースホルダーになる。メニューの「生成」をクリックすると OFF。リロードしても状態は維持される
@@ -46,8 +46,10 @@ http://localhost:5173 で開く。DB は `data/dev.sqlite` が使われる。
 ```sh
 npm ci
 npm run build
-node build
+node --env-file=.env build
 ```
+
+RunPod を使わない場合は `node build` のままでよい。`.env` は `.env.example` をコピーして作成する。
 
 http://localhost:3000 で起動する (`Listening on http://0.0.0.0:3000`)。
 

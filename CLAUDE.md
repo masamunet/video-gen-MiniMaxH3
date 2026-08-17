@@ -35,8 +35,12 @@ dev / prod の DB を相互にコピー・マージするコードや運用を�
 
 - 生成バックエンドとして RunPod Serverless (Endpoint `your-runpod-endpoint-id`) を選択可能。
   送信形式は `{input:{workflow}}`、結果は `output.images[].data` (base64) で返る
-- **API キー (`rpa_...`) は絶対にファイルへ書かない・コミットしない**。
-  サーバー起動時の環境変数 `RUNPOD_API_KEY` でのみ渡す
+- API キー (`rpa_...`) は環境変数 `RUNPOD_API_KEY` で渡す。ローカルでは
+  プロジェクト直下の `.env` に書いてよい (`.env` は gitignore 済み)。
+  **絶対にコミットしない・チャットや Issue に貼らない**
+  - 開発 (`npm run dev`): Vite/SvelteKit が `.env` を自動読み込みする
+  - 本番 (`node build`): `.env` は自動読み込みされない。
+    `node --env-file=.env build` として起動するか、シェルで export する
 - RunPod の `workersMin` は 0 のままにする (1 以上はアイドル課金)
 - 動作確認は軽量設定 (0.1MP / duration 5 / steps 4) で行う。1回あたり約3分
 
