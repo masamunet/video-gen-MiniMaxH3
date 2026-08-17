@@ -8,6 +8,7 @@
 	import { billableSeconds, fmtCost } from '$lib/cost';
 	import { settings, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import TestPattern from './TestPattern.svelte';
+	import { playableVideo } from '$lib/media';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
 
 	let {
@@ -18,6 +19,11 @@
 	const host = $derived(settings.value.host);
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
+
+	// 閉じた瞬間に止める (アンマウント後も鳴り続けるのを防ぐ。解放は use:playableVideo 側で行う)
+	$effect(() => {
+		if (!open && videoEl && !videoEl.paused) videoEl.pause();
+	});
 
 	function fullscreen() {
 		// Safari 用のプレフィックス付き API にもフォールバック
@@ -96,6 +102,7 @@
 						<!-- svelte-ignore a11y_media_has_caption -->
 						<video
 							bind:this={videoEl}
+							use:playableVideo
 							class="max-h-full max-w-full rounded-md object-contain"
 							src={videoUrl(host, record.video)}
 							controls

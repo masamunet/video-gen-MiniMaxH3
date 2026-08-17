@@ -24,6 +24,7 @@
 	import { FALLBACK_ASPECT_RATIOS } from '$lib/workflow';
 	import { videoUrl, fetchResolutionOptions, fmtSeconds } from '$lib/comfy';
 	import { queue, jobElapsed, MAX_BATCH } from '$lib/queue.svelte';
+	import { previewVideo } from '$lib/media';
 	import VideoModal from '$lib/components/VideoModal.svelte';
 	import TestPattern from '$lib/components/TestPattern.svelte';
 
@@ -548,6 +549,7 @@
 							>
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
+									use:previewVideo
 									class="max-h-full max-w-full rounded-xl border border-edge object-contain shadow-2xl shadow-black/50"
 									src={videoUrl(host, viewRecord.video)}
 									preload="metadata"
@@ -750,6 +752,7 @@
 							{:else if rec.video}
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
+									use:previewVideo
 									class="size-full object-contain opacity-80 transition-opacity group-hover:opacity-100"
 									src={videoUrl(host, rec.video)}
 									preload="metadata"

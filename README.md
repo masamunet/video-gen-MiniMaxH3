@@ -77,6 +77,7 @@ ResolutionSelector / DPRandomGenerator / GFDeepTranslate / M_ShowText / RestoreD
 
 - ComfyUI への通信はすべて SvelteKit サーバールート `/api/*` で中継し CORS を回避（`/api/view` は Range リクエスト対応で動画をストリーミング中継）
 - 送信するワークフローはノイズシードとランダムプロンプトのシードを毎回ランダム化
+- `<video>` の後始末は [src/lib/media.ts](src/lib/media.ts) の action で行う。DOM から外れただけの動画は再生状態やデコーダを保持し、AirPods の着脱やメディアキーの再生信号で裏側から鳴り出して止められなくなるため、プレビュー用は `use:previewVideo` (再生されたら即停止 + `disableRemotePlayback`)、モーダルの再生用は `use:playableVideo` を付け、破棄時に `pause()` → `src` 除去 → `load()` で確実に解放する
 - 整形後の日本語プロンプトを取得するため、`DPRandomGenerator` 出力に `M_ShowText` ノード (ID `990`) を注入して history から回収（`M_ShowText` は `text` ではなく `text_display` キーで出力する点に注意）
 - 履歴・レシピは SQLite (better-sqlite3) に保存。**開発と本番で DB は完全分離**: 開発 (`npm run dev`) は `data/dev.sqlite`、本番は `data/prod.sqlite`、環境変数 `VIDEO_GEN_DB_PATH` で上書き可。⚠️ 本番 DB には機密情報が含まれるため AI エージェントは読み取り禁止 ([CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md) 参照)
 - 入力パラメータ・設定・実行中ジョブは localStorage。動画ファイル自体は ComfyUI サーバー側に保存されたものを参照

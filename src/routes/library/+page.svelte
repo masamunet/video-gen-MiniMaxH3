@@ -9,6 +9,7 @@
 	import { settings, history, bossMode, type HistoryRecord } from '$lib/stores.svelte';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
 	import { billableSeconds, fmtCost, fmtCostTotal } from '$lib/cost';
+	import { previewVideo } from '$lib/media';
 	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
 	import Download from '@lucide/svelte/icons/download';
 	import VideoModal from '$lib/components/VideoModal.svelte';
@@ -126,6 +127,7 @@
 							{:else if rec.video}
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<video
+									use:previewVideo
 									class="size-full object-contain opacity-85 transition-all group-hover:scale-[1.02] group-hover:opacity-100"
 									src={videoUrl(host, rec.video)}
 									preload="metadata"
