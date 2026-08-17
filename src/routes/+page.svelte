@@ -191,6 +191,10 @@
 		deck.value = deck.value.map((c) => (c.id === id ? { ...c, weight } : c));
 	}
 
+	function setCardTitle(id: string, title: string) {
+		deck.value = deck.value.map((c) => (c.id === id ? { ...c, title } : c));
+	}
+
 	function removeCard(id: string) {
 		deck.value = deck.value.filter((c) => c.id !== id);
 	}
@@ -962,7 +966,7 @@
 				{:else}
 					{#each deck.value as card (card.id)}
 						<div
-							class="w-60 shrink-0 rounded-lg border bg-panel p-2.5 transition-opacity
+							class="w-72 shrink-0 rounded-lg border bg-panel p-2.5 transition-opacity
 							{card.weight > 0 ? 'border-edge' : 'border-edge opacity-45'}"
 						>
 							<div class="flex items-center gap-1.5">
@@ -983,9 +987,26 @@
 									<X size={12} />
 								</button>
 							</div>
-							<p class="mt-1 truncate text-[11px] text-ink/85" title={card.params.prompt}>
-								{card.params.prompt}
-							</p>
+							<input
+								class="mt-1 w-full border-b border-transparent bg-transparent text-[12px] font-medium text-ink/90 transition-colors outline-none placeholder:text-faint/60 hover:border-edge2 focus:border-amber/40"
+								value={card.title ?? ''}
+								oninput={(e) => setCardTitle(card.id, e.currentTarget.value)}
+								placeholder="タイトルを付ける"
+								title="カードのタイトル (クリックで編集)"
+							/>
+							<!-- プロンプトは複数行見せて判別できるように。全文はロールオーバーで -->
+							<div class="group/pv relative mt-0.5">
+								<p class="line-clamp-4 py-0.5 text-[10px] leading-relaxed break-words text-mute">
+									{card.params.prompt}
+								</p>
+								<div
+									class="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden max-h-56 w-72 overflow-hidden rounded-lg border border-edge2 bg-panel px-3 py-2 shadow-xl shadow-black/60 group-hover/pv:block"
+								>
+									<p class="text-[11px] leading-relaxed break-words whitespace-pre-wrap text-ink/90">
+										{card.params.prompt}
+									</p>
+								</div>
+							</div>
 							<div class="mt-1 flex items-center gap-2 font-mono text-[9px] text-faint">
 								<span>{card.params.aspectRatio.split(' ')[0]}</span>
 								<span>{card.params.megapixels}MP</span>
@@ -1055,7 +1076,7 @@
 							</div>
 							<p class="mt-1 truncate text-[10px] text-mute">
 								{sd.cards
-									.map((c) => c.params.prompt)
+									.map((c) => c.title?.trim() || c.params.prompt)
 									.join(' / ')}
 							</p>
 							<p class="mt-0.5 font-mono text-[9px] text-faint">

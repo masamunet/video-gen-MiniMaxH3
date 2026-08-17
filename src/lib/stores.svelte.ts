@@ -108,6 +108,8 @@ export const jobs = new Persisted<QueueJob[]>('vg:jobs', []);
  */
 export interface DeckCard {
 	id: string;
+	/** カードの表示名 (空ならプロンプトを表示) */
+	title?: string;
 	params: GenParams;
 	/** 出現率の重み (0〜1、0.1刻み)。0 のカードは出現しない */
 	weight: number;
