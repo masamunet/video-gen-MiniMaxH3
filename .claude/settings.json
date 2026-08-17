@@ -1,0 +1,19 @@
+{
+	"permissions": {
+		"deny": [
+			"Read(./data/prod.sqlite)",
+			"Read(./data/prod.sqlite-wal)",
+			"Read(./data/prod.sqlite-shm)",
+			"Read(./data/prod.sqlite*)"
+		]
+	},
+	"sandbox": {
+		"filesystem": {
+			"denyRead": [
+				"./data/prod.sqlite",
+				"./data/prod.sqlite-wal",
+				"./data/prod.sqlite-shm"
+			]
+		}
+	}
+}
