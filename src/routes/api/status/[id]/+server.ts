@@ -88,7 +88,18 @@ export const GET: RequestHandler = async ({ params, url }) => {
 					return json({ state: 'error', message: messages || '実行中にエラーが発生しました' });
 				}
 				if (entry.status?.completed || entry.outputs) {
-					return json({ state: 'done', outputs: entry.outputs ?? {} });
+					// 実際にこのジョブの生成にかかった時間 (キュー待ちを含まない)。
+					// 連続投入時は送信時刻からの経過だと前のジョブの時間まで含んでしまう
+					const msgs: [string, Record<string, number>][] = entry.status?.messages ?? [];
+					const stamp = (name: string) =>
+						msgs.find((m) => m[0] === name)?.[1]?.timestamp;
+					const startedAt = stamp('execution_start');
+					const finishedAt = stamp('execution_success');
+					const execSeconds =
+						startedAt && finishedAt && finishedAt >= startedAt
+							? (finishedAt - startedAt) / 1000
+							: null;
+					return json({ state: 'done', outputs: entry.outputs ?? {}, execSeconds });
 				}
 			}
 		}

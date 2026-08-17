@@ -62,12 +62,12 @@ export interface HistoryRecord {
 	jpPrompt: string;
 	/** 翻訳・タグ復元後の最終英語プロンプト */
 	enPrompt: string;
-	/** 生成にかかった秒数 (送信から完了までの実測) */
+	/** この1本の生成にかかった秒数 (キュー待ち時間は含まない) */
 	seconds: number;
 	video: VideoFile | null;
 	/** 生成に使ったバックエンド (旧データは undefined = comfy) */
 	backend?: Backend;
-	/** RunPod のワーカー実行秒数 (課金対象時間。RunPod 生成時のみ) */
+	/** サーバーが報告した実行秒数 (RunPod は課金対象時間、ComfyUI は execution_start〜success) */
 	execSeconds?: number | null;
 }
 
@@ -93,6 +93,8 @@ export interface QueueJob {
 	endpointId: string;
 	host: string;
 	state: 'queued' | 'running';
+	/** 実際に実行が始まった時刻 (ポーリングで running を最初に見た時)。待ち時間を除いた計測に使う */
+	runStartedAt?: number;
 	/** ComfyUI のキュー待ち順 (0 なら不明) */
 	position: number;
 	/** 同時投入したバッチ内の位置 (1 始まり) と総数 */

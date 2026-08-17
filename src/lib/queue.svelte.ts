@@ -132,7 +132,15 @@ class QueueStore {
 			if (!this.#polling.has(job.id)) return;
 
 			if (st.state === 'done') {
-				const seconds = Math.round(((Date.now() - job.startedAt) / 1000) * 10) / 10;
+				// 「この1本にかかった時間」を出す。連続投入では送信時刻からの経過だと
+				// 前のジョブの待ち時間まで含んでしまうため、
+				// サーバーが報告した実行時間 → 実行開始からの実測 → 送信からの実測 の順に採用する
+				const current = jobs.value.find((j) => j.id === job.id);
+				const runFrom = current?.runStartedAt ?? job.runStartedAt ?? job.startedAt;
+				const measured = (Date.now() - runFrom) / 1000;
+				const seconds =
+					Math.round((st.execSeconds != null && st.execSeconds > 0 ? st.execSeconds : measured) * 10) /
+					10;
 				const parsed = parseOutputs(st.outputs);
 				const record: HistoryRecord = {
 					id: job.id,
@@ -164,7 +172,11 @@ class QueueStore {
 			if (st.state === 'queued') {
 				this.#update(job.id, { state: 'queued', position: st.position });
 			} else if (st.state === 'running') {
-				this.#update(job.id, { state: 'running' });
+				const cur = jobs.value.find((j) => j.id === job.id);
+				this.#update(job.id, {
+					state: 'running',
+					runStartedAt: cur?.runStartedAt ?? Date.now()
+				});
 			}
 
 			unknown = st.state === 'unknown' ? unknown + 1 : 0;
@@ -204,7 +216,11 @@ class QueueStore {
 
 export const queue = new QueueStore();
 
-/** ジョブの経過秒数 */
+/**
+ * ジョブの経過秒数。実行中は実行開始からの時間 (キュー待ちを含まない)、
+ * 待機中は投入からの時間を返す。
+ */
 export function jobElapsed(job: QueueJob, now: number): number {
-	return Math.max(0, (now - job.startedAt) / 1000);
+	const from = job.state === 'running' ? (job.runStartedAt ?? job.startedAt) : job.startedAt;
+	return Math.max(0, (now - from) / 1000);
 }
