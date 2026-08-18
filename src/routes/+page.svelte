@@ -24,6 +24,7 @@
 		params,
 		history,
 		deck,
+		editingDeckId,
 		bossMode,
 		type HistoryRecord,
 		type SavedDeck
@@ -32,7 +33,7 @@
 	import Save from '@lucide/svelte/icons/save';
 	import CopyPlus from '@lucide/svelte/icons/copy-plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { aliveCards, appearanceRate, drawParams } from '$lib/deck';
+	import { aliveCards, appearanceRate, cardCopies, drawParams, pileSize } from '$lib/deck';
 	import { randomId } from '$lib/compat';
 	import { copyText } from '$lib/compat';
 	import { billableSeconds, fmtCost } from '$lib/cost';
@@ -215,14 +216,10 @@
 		}
 	}
 
-	// ── デッキライブラリ (保存・読み込み・複製。サーバー側 SQLite に永続化) ──
+	// ── デッキ保存 (一覧・読み込み・複製・削除は /library/decks の専用画面で行う) ──
 	let savedDecks = $state<SavedDeck[]>([]);
-	/** 読み込んで編集中の保存済みデッキ ID */
-	let editingDeckId = $state<string | null>(null);
 	let deckSaveOpen = $state(false);
 	let deckSaveName = $state('');
-	/** 読み込み確認の対象 */
-	let loadDeckTarget = $state<SavedDeck | null>(null);
 
 	$effect(() => {
 		fetch('/api/decks')
@@ -231,32 +228,17 @@
 			.catch(() => {});
 	});
 
-	async function persistDeck(sd: SavedDeck) {
-		await fetch('/api/decks', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(sd)
-		}).catch(() => {});
-	}
-
-	/** 現在のデッキに失うと困る未保存の変更があるか */
-	function deckIsDirty(): boolean {
-		const cur = JSON.stringify($state.snapshot(deck.value));
-		if (editingDeckId) {
-			const sd = savedDecks.find((d) => d.id === editingDeckId);
-			if (sd) return cur !== JSON.stringify($state.snapshot(sd).cards);
-		}
-		return deck.value.length > 0;
-	}
-
 	function openDeckSave() {
-		if (!editingDeckId) deckSaveName = '';
+		if (!editingDeckId.value) deckSaveName = '';
 		deckSaveOpen = true;
 	}
 
 	async function saveDeck(asNew: boolean) {
 		const now = Date.now();
-		const existing = !asNew && editingDeckId ? savedDecks.find((d) => d.id === editingDeckId) : undefined;
+		const existing =
+			!asNew && editingDeckId.value
+				? savedDecks.find((d) => d.id === editingDeckId.value)
+				: undefined;
 		const sd: SavedDeck = {
 			id: existing?.id ?? randomId(),
 			name: deckSaveName.trim() || '無題デッキ',
@@ -265,53 +247,17 @@
 			updatedAt: now
 		};
 		savedDecks = [sd, ...savedDecks.filter((d) => d.id !== sd.id)];
-		editingDeckId = sd.id;
+		editingDeckId.value = sd.id;
 		deckSaveOpen = false;
-		await persistDeck(sd);
-	}
-
-	function requestLoadDeck(sd: SavedDeck) {
-		if (editingDeckId === sd.id && !deckIsDirty()) return; // 既に読み込み済みで変更なし
-		if (deckIsDirty()) loadDeckTarget = sd;
-		else applyDeck(sd);
-	}
-
-	function confirmLoadDeck() {
-		if (loadDeckTarget) applyDeck(loadDeckTarget);
-		loadDeckTarget = null;
-	}
-
-	function applyDeck(sd: SavedDeck) {
-		deck.value = structuredClone($state.snapshot(sd).cards);
-		editingDeckId = sd.id;
-		deckSaveName = sd.name;
-	}
-
-	/** 保存済みデッキを複製する (現在のデッキには触れない) */
-	async function duplicateDeck(e: MouseEvent, sd: SavedDeck) {
-		e.stopPropagation();
-		const now = Date.now();
-		const copy: SavedDeck = {
-			id: randomId(),
-			name: `${sd.name} (コピー)`,
-			cards: structuredClone($state.snapshot(sd).cards),
-			createdAt: now,
-			updatedAt: now
-		};
-		savedDecks = [copy, ...savedDecks];
-		await persistDeck(copy);
-	}
-
-	async function deleteSavedDeck(e: MouseEvent, sd: SavedDeck) {
-		e.stopPropagation();
-		if (!confirm(`デッキ「${sd.name}」を削除しますか？`)) return;
-		savedDecks = savedDecks.filter((d) => d.id !== sd.id);
-		if (editingDeckId === sd.id) editingDeckId = null;
-		await fetch(`/api/decks/${encodeURIComponent(sd.id)}`, { method: 'DELETE' }).catch(() => {});
+		await fetch('/api/decks', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(sd)
+		}).catch(() => {});
 	}
 
 	const editingDeckName = $derived(
-		editingDeckId ? savedDecks.find((d) => d.id === editingDeckId)?.name : null
+		editingDeckId.value ? savedDecks.find((d) => d.id === editingDeckId.value)?.name : null
 	);
 
 	function restoreParams(record: HistoryRecord) {
@@ -918,7 +864,7 @@
 					</span>
 					<button
 						class="rounded p-0.5 text-faint transition-colors hover:text-ink"
-						onclick={() => (editingDeckId = null)}
+						onclick={() => (editingDeckId.value = null)}
 						title="保存済みデッキの編集をやめて新規にする"
 					>
 						<X size={11} />
@@ -927,7 +873,7 @@
 				{#if deck.value.length > 0}
 					<div class="ml-auto flex items-center gap-3">
 						<!-- デッキ専用の抽選回数 (通常の生成回数スライダーとは独立) -->
-						<div class="flex items-center gap-1.5" title="デッキから抽選する回数 (通常の「生成回数」とは別)">
+						<div class="flex items-center gap-1.5" title="山札から引く回数 (通常の「生成回数」とは別)">
 							<span class="font-mono text-[10px] text-faint">抽選</span>
 							<input
 								type="range"
@@ -958,7 +904,7 @@
 							class="flex items-center gap-1.5 rounded-lg bg-amber px-3 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-amber/85 disabled:cursor-not-allowed disabled:opacity-40"
 							onclick={runDeck}
 							disabled={aliveCards(deck.value).length === 0 || submitting}
-							title="重みに比例した確率で {deckBatchCount} 回抽選し、キューに投入する"
+							title="山札 ({pileSize(deck.value)}枚) をシャッフルして {deckBatchCount} 回引き、キューに投入する (同じカードは山札を引き切るまで再登場しない)"
 						>
 							<Play size={11} fill="currentColor" />
 							{submitting ? '送信中…' : `${deckBatchCount}件実行`}
@@ -995,9 +941,14 @@
 							<div class="flex items-center gap-1.5">
 								<span
 									class="rounded border border-amber/25 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-amber"
-									title="デッキ実行時にこのカードが選ばれる確率"
+									title="長い目で見た出現率。山札1周 ({pileSize(deck.value)}枚) にこのカードが {cardCopies(deck.value).find((c) => c.card.id === card.id)?.copies ?? 0} 枚入る"
 								>
 									{Math.round(appearanceRate(card, deck.value) * 100)}%
+									{#if (cardCopies(deck.value).find((c) => c.card.id === card.id)?.copies ?? 0) > 1}
+										<span class="text-amber/70"
+											>×{cardCopies(deck.value).find((c) => c.card.id === card.id)?.copies}</span
+										>
+									{/if}
 								</span>
 								{#if card.weight <= 0}
 									<span class="font-mono text-[9px] text-faint">出現しない</span>
@@ -1056,64 +1007,15 @@
 					{/each}
 				{/if}
 
-				<!-- デッキライブラリ (保存済みデッキ) -->
-				{#if savedDecks.length > 0}
-					<div class="mx-1 w-px shrink-0 self-stretch bg-edge"></div>
-					<div
-						class="flex shrink-0 items-center self-stretch font-mono text-[9px] font-semibold tracking-[0.2em] text-faint uppercase"
-						style="writing-mode: vertical-rl"
-					>
-						Library
-					</div>
-					{#each savedDecks as sd (sd.id)}
-						<div
-							class="group w-44 shrink-0 cursor-pointer rounded-lg border p-2.5 transition-all
-							{editingDeckId === sd.id
-								? 'border-amber/50 bg-amber/5'
-								: 'border-edge bg-panel hover:border-edge2 hover:bg-panel2'}"
-							onclick={() => requestLoadDeck(sd)}
-							onkeydown={(e) => e.key === 'Enter' && requestLoadDeck(sd)}
-							role="button"
-							tabindex="0"
-							title="クリックでこのデッキを読み込む"
-						>
-							<div class="flex items-center gap-1.5">
-								<Layers size={11} class="shrink-0 text-amber/70" />
-								<p class="min-w-0 flex-1 truncate text-[12px] font-medium text-ink/90">
-									{sd.name}
-								</p>
-								<button
-									class="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all group-hover:opacity-100 hover:text-amber"
-									onclick={(e) => duplicateDeck(e, sd)}
-									title="このデッキを複製する"
-								>
-									<CopyPlus size={12} />
-								</button>
-								<button
-									class="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all group-hover:opacity-100 hover:text-rec"
-									onclick={(e) => deleteSavedDeck(e, sd)}
-									title="このデッキを削除する"
-								>
-									<Trash2 size={12} />
-								</button>
-							</div>
-							<p class="mt-1 truncate text-[10px] text-mute">
-								{sd.cards
-									.map((c) => c.title?.trim() || c.params.prompt)
-									.join(' / ')}
-							</p>
-							<p class="mt-0.5 font-mono text-[9px] text-faint">
-								{sd.cards.length}枚 ·
-								{new Date(sd.updatedAt).toLocaleString('ja-JP', {
-									month: 'numeric',
-									day: 'numeric',
-									hour: '2-digit',
-									minute: '2-digit'
-								})}
-							</p>
-						</div>
-					{/each}
-				{/if}
+				<!-- デッキの一覧・読み込み・複製・削除は専用画面で -->
+				<a
+					class="flex w-32 shrink-0 flex-col items-center justify-center gap-1.5 self-stretch rounded-lg border border-dashed border-edge2 text-[11px] font-medium text-mute transition-colors hover:border-amber/40 hover:text-amber"
+					href="/library/decks"
+					title="保存済みデッキの一覧・編集はデッキ管理画面で"
+				>
+					<Layers size={16} />
+					デッキ管理 →
+				</a>
 			</div>
 		{:else if bottomTab === 'queue'}
 			<!-- キュー一覧 -->
@@ -1283,7 +1185,7 @@
 				>
 					キャンセル
 				</Dialog.Close>
-				{#if editingDeckId}
+				{#if editingDeckId.value}
 					<button
 						class="rounded-lg border border-amber/40 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/10"
 						onclick={() => saveDeck(true)}
@@ -1295,55 +1197,10 @@
 					class="rounded-lg bg-amber px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-amber/85"
 					onclick={() => saveDeck(false)}
 				>
-					{editingDeckId ? '上書き保存' : '保存'}
+					{editingDeckId.value ? '上書き保存' : '保存'}
 				</button>
 			</div>
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
 
-<!-- デッキ読み込み確認ダイアログ -->
-<Dialog.Root
-	open={loadDeckTarget !== null}
-	onOpenChange={(o) => {
-		if (!o) loadDeckTarget = null;
-	}}
->
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
-		<Dialog.Content
-			class="fade-up fixed top-1/2 left-1/2 z-50 w-[min(440px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-edge bg-panel p-6 shadow-2xl shadow-black/60"
-		>
-			<Dialog.Title
-				class="flex items-center gap-2 font-mono text-sm font-semibold tracking-widest text-ink uppercase"
-			>
-				<TriangleAlert size={16} class="text-amber" />
-				読み込みの確認
-			</Dialog.Title>
-			<p class="mt-3 text-[13px] leading-relaxed text-mute">
-				「<span class="text-ink">{loadDeckTarget?.name}</span>」を読み込むと、
-				{#if editingDeckName}
-					編集中のデッキ「<span class="text-ink">{editingDeckName}</span>」への未保存の変更は失われます。
-				{:else}
-					現在の未保存のデッキは失われます。
-				{/if}
-			</p>
-			<p class="mt-1.5 text-[11px] text-faint">
-				残したい場合はキャンセルして「保存」してから読み込んでください。
-			</p>
-			<div class="mt-5 flex justify-end gap-2">
-				<Dialog.Close
-					class="rounded-lg border border-edge px-4 py-2 text-xs font-medium text-mute transition-colors hover:border-edge2 hover:text-ink"
-				>
-					キャンセル
-				</Dialog.Close>
-				<button
-					class="rounded-lg bg-amber px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-amber/85"
-					onclick={confirmLoadDeck}
-				>
-					破棄して読み込む
-				</button>
-			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>

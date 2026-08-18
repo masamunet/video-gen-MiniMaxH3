@@ -14,6 +14,7 @@
 	import Download from '@lucide/svelte/icons/download';
 	import VideoModal from '$lib/components/VideoModal.svelte';
 	import TestPattern from '$lib/components/TestPattern.svelte';
+	import LibraryTabs from '$lib/components/LibraryTabs.svelte';
 
 	const host = $derived(settings.value.host);
 	const boss = $derived(bossMode.value);
@@ -68,9 +69,7 @@
 <main class="min-h-0 flex-1 overflow-y-auto">
 	<div class="mx-auto max-w-6xl px-6 py-6">
 		<div class="mb-5 flex flex-wrap items-center gap-4">
-			<h1 class="font-mono text-sm font-semibold tracking-[0.25em] text-ink uppercase">
-				Library
-			</h1>
+			<LibraryTabs current="videos" />
 			<span class="font-mono text-[11px] text-faint">{filtered.length} 件</span>
 			{#if runpodTotal > 0}
 				<span

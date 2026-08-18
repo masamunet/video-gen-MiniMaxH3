@@ -41,7 +41,10 @@
 
 		<nav class="flex items-center gap-1">
 			{#each nav as item (item.href)}
-				{@const active = page.url.pathname === item.href}
+				{@const active =
+				item.href === '/'
+					? page.url.pathname === '/'
+					: page.url.pathname.startsWith(item.href)}
 				<a
 					href={item.href}
 					class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors

@@ -120,6 +120,12 @@ export interface DeckCard {
 
 export const deck = new Persisted<DeckCard[]>('vg:deck', []);
 
+/**
+ * 構築中デッキとして読み込んでいる保存済みデッキの ID。
+ * 生成画面とデッキ管理画面で共有し、上書き保存の対象になる。
+ */
+export const editingDeckId = new Persisted<string | null>('vg:editingDeckId', null);
+
 /** デッキライブラリに保存されたデッキ (サーバー側 SQLite に永続化) */
 export interface SavedDeck {
 	id: string;
