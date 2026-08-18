@@ -38,7 +38,7 @@
 	import { copyText } from '$lib/compat';
 	import { billableSeconds, fmtCost } from '$lib/cost';
 	import { FALLBACK_ASPECT_RATIOS } from '$lib/workflow';
-	import { videoUrl, fetchResolutionOptions, fmtSeconds } from '$lib/comfy';
+	import { videoUrl, fetchResolutionOptions, fmtSeconds, fmtMinSec } from '$lib/comfy';
 	import { queue, jobElapsed, MAX_BATCH } from '$lib/queue.svelte';
 	import { previewVideo } from '$lib/media';
 	import { computeResolution, RESOLUTION_MULTIPLE } from '$lib/resolution';
@@ -309,6 +309,7 @@
 				: '生成中'
 	);
 	const headElapsed = $derived(runningJob ? jobElapsed(runningJob, queue.now) : 0);
+	const headMinSec = $derived(fmtMinSec(headElapsed));
 
 	/** タブは幅が狭いので、タイトル用は最短表記にする */
 	const shortLabel = $derived(
@@ -346,7 +347,7 @@
 
 <!-- 列を minmax(0,1fr) で固定しないと、履歴が増えたときにグリッドごと横に広がってページに横スクロールが出る -->
 <main class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
-	<div class="grid min-h-0 grid-cols-[400px_minmax(0,1fr)]">
+	<div class="grid min-h-0 grid-cols-[minmax(460px,42%)_minmax(0,1fr)]">
 		<!-- ══════════ 左: 入力 ══════════ -->
 		<section class="flex min-h-0 flex-col overflow-y-auto border-r border-edge bg-panel/40">
 			<div class="flex items-center gap-2 border-b border-edge px-5 py-3">
@@ -636,6 +637,9 @@
 							<span class="text-mute">残{activeJobs.length}件</span>
 						{/if}
 						<span class="tabular-nums text-ink">{headElapsed.toFixed(1)}s</span>
+						{#if headMinSec}
+							<span class="tabular-nums text-faint">({headMinSec})</span>
+						{/if}
 					</span>
 				{:else if viewRecord}
 					<span class="ml-auto flex items-center gap-2 font-mono text-[11px] text-mute">
@@ -677,9 +681,14 @@
 								<p class="font-mono text-sm tracking-widest text-mute">
 									{headLabel}{activeJobs.length > 1 ? ` · 残${activeJobs.length}件` : ''}
 								</p>
-								<p class="font-mono text-3xl font-semibold tabular-nums text-ink">
-									{headElapsed.toFixed(1)}<span class="ml-1 text-base text-faint">s</span>
-								</p>
+								<div class="flex flex-col items-center gap-0.5">
+									<p class="font-mono text-3xl font-semibold tabular-nums text-ink">
+										{headElapsed.toFixed(1)}<span class="ml-1 text-base text-faint">s</span>
+									</p>
+									{#if headMinSec}
+										<p class="font-mono text-xs tabular-nums text-faint">{headMinSec}</p>
+									{/if}
+								</div>
 							</div>
 						</div>
 					</div>
@@ -1021,6 +1030,7 @@
 					<p class="py-4 text-xs text-faint">キューは空です</p>
 				{:else}
 					{#each activeJobs as job (job.id)}
+						{@const elapsed = jobElapsed(job, queue.now)}
 						<div
 							class="w-52 shrink-0 rounded-lg border p-2.5
 							{job.state === 'running' ? 'border-amber/40 bg-amber/5' : 'border-edge bg-panel'}"
@@ -1054,7 +1064,9 @@
 							</p>
 							<div class="mt-1 flex items-center gap-2 font-mono text-[9px] text-faint">
 								<span class="tabular-nums text-mute">
-									{jobElapsed(job, queue.now).toFixed(0)}s
+									{elapsed.toFixed(0)}s{#if fmtMinSec(elapsed)}
+										<span class="text-faint"> ({fmtMinSec(elapsed)})</span>
+									{/if}
 								</span>
 								<span>{job.params.megapixels}MP</span>
 								<span>{job.params.duration}s</span>
