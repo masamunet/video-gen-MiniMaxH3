@@ -27,3 +27,6 @@ data/
 
 # RunPod flash CLI local artifacts
 .flash/
+
+# review file
+reviews/
