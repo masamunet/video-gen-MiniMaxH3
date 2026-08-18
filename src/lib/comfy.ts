@@ -1,19 +1,27 @@
 // 生成バックエンドとの通信ヘルパー(すべて同一オリジンのプロキシ /api/* 経由でCORSを回避)
 import { EN_FINAL_ID, JP_CAPTURE_ID, SAVE_VIDEO_ID } from './workflow';
-import type { Backend, Settings, VideoFile } from './stores.svelte';
+import {
+	DEFAULT_EXEC_TIMEOUT_MIN,
+	type Backend,
+	type Settings,
+	type VideoFile
+} from './stores.svelte';
 
 /** 生成リクエストの送信先 (デスクトップの ComfyUI か RunPod Serverless) */
 export interface BackendTarget {
 	backend: Backend;
 	host: string;
 	endpointId: string;
+	/** RunPod のみ: ジョブ1件の実行タイムアウト (分) */
+	executionTimeoutMin?: number;
 }
 
 export function targetFromSettings(s: Settings): BackendTarget {
 	return {
 		backend: s.backend ?? 'comfy',
 		host: s.host,
-		endpointId: s.runpodEndpointId ?? ''
+		endpointId: s.runpodEndpointId ?? '',
+		executionTimeoutMin: s.runpodExecutionTimeoutMin ?? DEFAULT_EXEC_TIMEOUT_MIN
 	};
 }
 

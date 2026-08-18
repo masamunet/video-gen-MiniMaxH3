@@ -2,6 +2,12 @@ import { browser } from '$app/environment';
 import { DEFAULT_PARAMS, type GenParams } from './workflow';
 import { DEFAULT_BUILDER, normalizeBuilder, type BuilderData } from './promptBuilder';
 
+/**
+ * RunPod の実行タイムアウト既定値 (分)。RunPod 側の既定は 10 分しかなく、
+ * メガピクセルや duration を上げた生成が executionTimeout で打ち切られる。
+ */
+export const DEFAULT_EXEC_TIMEOUT_MIN = 30;
+
 /** localStorage に自動保存されるリアクティブな値 */
 export class Persisted<T> {
 	value = $state() as T;
@@ -44,6 +50,8 @@ export interface Settings {
 	runpodEndpointId: string;
 	/** RunPod ワーカーの時間単価 (USD/hr) */
 	runpodCostPerHour: number;
+	/** RunPod ジョブ1件あたりの実行タイムアウト (分)。超えると TIMED_OUT で失敗する */
+	runpodExecutionTimeoutMin: number;
 	/** ドル円レート */
 	usdJpy: number;
 }
@@ -76,6 +84,7 @@ export const settings = new Persisted<Settings>('vg:settings', {
 	backend: 'comfy',
 	runpodEndpointId: 'your-runpod-endpoint-id',
 	runpodCostPerHour: 1.1,
+	runpodExecutionTimeoutMin: DEFAULT_EXEC_TIMEOUT_MIN,
 	usdJpy: 165
 });
 

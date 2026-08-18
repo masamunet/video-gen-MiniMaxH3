@@ -41,6 +41,9 @@ dev / prod の DB を相互にコピー・マージするコードや運用を�
   - 開発 (`npm run dev`): Vite/SvelteKit が `.env` を自動読み込みする
   - 本番 (`node build`): `.env` は自動読み込みされない。
     `node --env-file=.env build` として起動するか、シェルで export する
+- ジョブ送信時に `policy.executionTimeout` (設定ダイアログの「実行タイムアウト」、既定
+  30分) を付ける。付けないと RunPod 既定の10分で打ち切られ
+  `executionTimeout exceeded` になる。コールドスタートのモデル読み込みも含まれる
 - RunPod の `workersMin` は 0 のままにする (1 以上はアイドル課金)
 - 動作確認は軽量設定 (0.1MP / duration 5 / steps 4) で行う。1回あたり約3分
 

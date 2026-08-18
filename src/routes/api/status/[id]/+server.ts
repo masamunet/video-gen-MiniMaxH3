@@ -50,14 +50,17 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				}
 				case 'FAILED':
 				case 'CANCELLED':
-				case 'TIMED_OUT':
+				case 'TIMED_OUT': {
+					const raw = typeof d.error === 'string' ? d.error : '';
+					// 実行時間オーバーは原因と対処が分かる日本語に置き換える
+					const timedOut = d.status === 'TIMED_OUT' || /executionTimeout/i.test(raw);
 					return json({
 						state: 'error',
-						message:
-							typeof d.error === 'string' && d.error
-								? d.error
-								: `RunPod ジョブが ${d.status} になりました`
+						message: timedOut
+							? '実行時間が上限を超えました。設定の「実行タイムアウト」を延ばすか、メガピクセル / duration / steps を下げてください'
+							: raw || `RunPod ジョブが ${d.status} になりました`
 					});
+				}
 				default:
 					return json({ state: 'unknown' });
 			}

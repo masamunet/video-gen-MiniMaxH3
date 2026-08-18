@@ -1,10 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { comfyUrl } from '$lib/server/comfy';
-import { NO_KEY_ERROR, runpodHeaders, runpodKey, runpodUrl } from '$lib/server/runpod';
+import {
+	NO_KEY_ERROR,
+	execTimeoutMs,
+	runpodHeaders,
+	runpodKey,
+	runpodUrl
+} from '$lib/server/runpod';
 
 export const POST: RequestHandler = async ({ request }) => {
-	const { host, workflow, backend, endpointId } = await request.json();
+	const { host, workflow, backend, endpointId, executionTimeoutMin } = await request.json();
 
 	// ── RunPod Serverless ──
 	if (backend === 'runpod') {
@@ -17,7 +23,13 @@ export const POST: RequestHandler = async ({ request }) => {
 			res = await fetch(runpodUrl(endpointId, 'run'), {
 				method: 'POST',
 				headers: runpodHeaders(key),
-				body: JSON.stringify({ input: { workflow } })
+				// policy.executionTimeout でジョブ単位の実行タイムアウトを指定する。
+				// 付けないとエンドポイント既定の10分で打ち切られ、重い設定の生成が
+				// "executionTimeout exceeded" で失敗する
+				body: JSON.stringify({
+					input: { workflow },
+					policy: { executionTimeout: execTimeoutMs(executionTimeoutMin) }
+				})
 			});
 		} catch {
 			return json({ error: 'RunPod に接続できません' }, { status: 502 });

@@ -18,6 +18,15 @@ export function runpodUrl(endpointId: string, apiPath: string): string {
 	return `https://api.runpod.ai/v2/${encodeURIComponent(endpointId)}/${apiPath}`;
 }
 
+/**
+ * 実行タイムアウト (分) を RunPod の policy.executionTimeout (ms) に変換する。
+ * 未指定・不正値は 30 分。範囲は 1〜180 分に丸める。
+ */
+export function execTimeoutMs(minutes: unknown): number {
+	const m = typeof minutes === 'number' && minutes > 0 ? minutes : 30;
+	return Math.round(Math.min(Math.max(m, 1), 180) * 60_000);
+}
+
 export function runpodHeaders(key: string): Record<string, string> {
 	return { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };
 }

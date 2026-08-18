@@ -3,13 +3,14 @@
 	import X from '@lucide/svelte/icons/x';
 	import ServerCog from '@lucide/svelte/icons/server-cog';
 	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
-	import { settings, type Backend } from '$lib/stores.svelte';
+	import { settings, DEFAULT_EXEC_TIMEOUT_MIN, type Backend } from '$lib/stores.svelte';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
 	let draftHost = $state('');
 	let draftBackend = $state<Backend>('comfy');
 	let draftEndpointId = $state('');
+	let draftTimeoutMin = $state(DEFAULT_EXEC_TIMEOUT_MIN);
 	let draftCostPerHour = $state(1.1);
 	let draftUsdJpy = $state(165);
 
@@ -18,10 +19,17 @@
 			draftHost = settings.value.host;
 			draftBackend = settings.value.backend ?? 'comfy';
 			draftEndpointId = settings.value.runpodEndpointId ?? '';
+			draftTimeoutMin = settings.value.runpodExecutionTimeoutMin ?? DEFAULT_EXEC_TIMEOUT_MIN;
 			draftCostPerHour = settings.value.runpodCostPerHour ?? 1.1;
 			draftUsdJpy = settings.value.usdJpy ?? 165;
 		}
 	});
+
+	/** RunPod の policy.executionTimeout に渡せる範囲 (1〜180 分) に丸める */
+	function clampTimeout(min: number): number {
+		if (!(min > 0)) return DEFAULT_EXEC_TIMEOUT_MIN;
+		return Math.min(Math.max(Math.round(min), 1), 180);
+	}
 
 	function save() {
 		settings.value = {
@@ -29,6 +37,7 @@
 			host: draftHost.trim() || settings.value.host,
 			backend: draftBackend,
 			runpodEndpointId: draftEndpointId.trim(),
+			runpodExecutionTimeoutMin: clampTimeout(Number(draftTimeoutMin)),
 			runpodCostPerHour: Number(draftCostPerHour) || 0,
 			usdJpy: Number(draftUsdJpy) || 0
 		};
@@ -100,6 +109,28 @@
 							を付けて起動してください (例:
 							<code class="rounded bg-well px-1 font-mono">RUNPOD_API_KEY=... node build</code>)。
 							過去にデスクトップで生成した動画の再生には引き続き ComfyUI ホストを使います。
+						</p>
+					</div>
+
+					<div>
+						<label class="mb-1.5 block text-xs font-medium text-mute" for="timeout-input">
+							実行タイムアウト (分)
+						</label>
+						<input
+							id="timeout-input"
+							type="number"
+							class="field-input text-center font-mono text-[13px]"
+							min="1"
+							max="180"
+							step="1"
+							bind:value={draftTimeoutMin}
+							onkeydown={(e) => e.key === 'Enter' && save()}
+						/>
+						<p class="mt-1.5 text-[11px] leading-relaxed text-faint">
+							1本の生成がこの時間を超えると RunPod がジョブを打ち切ります (エラー
+							<code class="rounded bg-well px-1 font-mono">executionTimeout exceeded</code>)。
+							RunPod 側の既定は 10 分で、メガピクセルや duration を上げると足りなくなります。
+							コールドスタートのモデル読み込み時間も含まれるので長めにしてください。
 						</p>
 					</div>
 				{/if}
