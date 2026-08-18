@@ -192,3 +192,13 @@ export function fmtSeconds(s: number): string {
 	}
 	return `${s.toFixed(1)}秒`;
 }
+
+/**
+ * 秒を「1分23秒」形式に換算する。60秒未満は換算しても情報が増えないので null。
+ * 経過秒数表示のサブ表記として使う。
+ */
+export function fmtMinSec(s: number): string | null {
+	const t = Math.round(s);
+	if (t < 60) return null;
+	return `${Math.floor(t / 60)}分${t % 60}秒`;
+}
