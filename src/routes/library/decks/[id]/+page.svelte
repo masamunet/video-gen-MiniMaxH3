@@ -23,6 +23,7 @@
 	let loaded = $state(false);
 	let notFound = $state(false);
 	let saving = $state(false);
+	let saveError = $state('');
 
 	const dirty = $derived(loaded && JSON.stringify({ name, cards }) !== original);
 
@@ -58,6 +59,7 @@
 	async function save() {
 		if (saving) return;
 		saving = true;
+		saveError = '';
 		const sd: SavedDeck = {
 			id: deckId,
 			name: name.trim() || '無題デッキ',
@@ -66,17 +68,24 @@
 			updatedAt: Date.now()
 		};
 		try {
-			await fetch('/api/decks', {
+			const res = await fetch('/api/decks', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(sd)
 			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				saveError = data.error ?? `保存に失敗しました (${res.status})`;
+				return;
+			}
 			name = sd.name;
 			original = JSON.stringify({ name: sd.name, cards: sd.cards });
 			// 構築中デッキとして開いている場合は生成画面側も追従させる
 			if (editingDeckId.value === deckId) {
 				deck.value = structuredClone(sd.cards);
 			}
+		} catch {
+			saveError = 'サーバーに接続できませんでした';
 		} finally {
 			saving = false;
 		}
@@ -178,6 +187,15 @@
 					<span class="text-amber">未保存の変更があります</span>
 				{/if}
 			</div>
+
+			{#if saveError}
+				<div
+					class="mb-4 flex items-start gap-2 rounded-lg border border-rec/30 bg-rec/10 p-3 text-xs leading-relaxed text-rec"
+				>
+					<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+					<span class="min-w-0 flex-1 break-all">{saveError}</span>
+				</div>
+			{/if}
 
 			<!-- カード一覧 (縦に大きく表示して編集しやすく) -->
 			<div class="flex flex-col gap-4">
