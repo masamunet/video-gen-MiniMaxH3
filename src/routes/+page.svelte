@@ -55,6 +55,8 @@
 
 	/** 同時に投入する本数 (ComfyUI の Batch Count 相当) */
 	let batchCount = $state(1);
+	/** デッキ実行時の抽選回数 (通常の生成回数とは独立) */
+	let deckBatchCount = $state(1);
 	let submitting = $state(false);
 
 	const activeJobs = $derived(queue.list);
@@ -202,7 +204,7 @@
 	/** デッキから生成回数分を重み付き抽選してキューに投入する */
 	async function runDeck() {
 		if (submitting) return;
-		const list = drawParams($state.snapshot(deck.value), batchCount);
+		const list = drawParams($state.snapshot(deck.value), deckBatchCount);
 		if (list.length === 0) return;
 		submitting = true;
 		previewOverride = false;
@@ -923,7 +925,28 @@
 					</button>
 				{/if}
 				{#if deck.value.length > 0}
-					<div class="ml-auto flex items-center gap-2">
+					<div class="ml-auto flex items-center gap-3">
+						<!-- デッキ専用の抽選回数 (通常の生成回数スライダーとは独立) -->
+						<div class="flex items-center gap-1.5" title="デッキから抽選する回数 (通常の「生成回数」とは別)">
+							<span class="font-mono text-[10px] text-faint">抽選</span>
+							<input
+								type="range"
+								class="fader w-20"
+								min="1"
+								max={MAX_BATCH}
+								step="1"
+								bind:value={deckBatchCount}
+								style={fill(deckBatchCount, 1, MAX_BATCH)}
+							/>
+							<input
+								type="number"
+								class="field-input w-11 px-1 py-0.5 text-center font-mono text-[11px]"
+								min="1"
+								max={MAX_BATCH}
+								step="1"
+								bind:value={deckBatchCount}
+							/>
+						</div>
 						<button
 							class="flex items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1 text-[11px] font-medium text-mute transition-colors hover:border-amber/40 hover:text-amber"
 							onclick={openDeckSave}
@@ -935,10 +958,10 @@
 							class="flex items-center gap-1.5 rounded-lg bg-amber px-3 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-amber/85 disabled:cursor-not-allowed disabled:opacity-40"
 							onclick={runDeck}
 							disabled={aliveCards(deck.value).length === 0 || submitting}
-							title="重みに比例した確率で {batchCount} 回抽選し、キューに投入する"
+							title="重みに比例した確率で {deckBatchCount} 回抽選し、キューに投入する"
 						>
 							<Play size={11} fill="currentColor" />
-							{submitting ? '送信中…' : `${batchCount}件実行`}
+							{submitting ? '送信中…' : `${deckBatchCount}件実行`}
 						</button>
 					</div>
 				{/if}
