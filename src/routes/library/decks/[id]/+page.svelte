@@ -9,7 +9,7 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import { deck, editingDeckId, type DeckCard, type SavedDeck } from '$lib/stores.svelte';
-	import { appearanceRate, cardCopies, pileSize } from '$lib/deck';
+	import { appearanceRate, pileSize } from '$lib/deck';
 	import { computeResolution } from '$lib/resolution';
 	import { FALLBACK_ASPECT_RATIOS, DEFAULT_PARAMS } from '$lib/workflow';
 	import { randomId } from '$lib/compat';
@@ -123,9 +123,6 @@
 		return `--fill: ${((v - min) / (max - min)) * 100}%`;
 	}
 
-	function copiesOf(card: DeckCard): number {
-		return cardCopies(cards).find((c) => c.card.id === card.id)?.copies ?? 0;
-	}
 </script>
 
 <svelte:head>
@@ -199,10 +196,9 @@
 							/>
 							<span
 								class="shrink-0 rounded border border-amber/25 bg-amber/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber"
-								title="山札1周にこのカードが {copiesOf(card)} 枚入る"
+								title="次の1枚に選ばれる確率 (重み ÷ デッキ全体の重みの合計)"
 							>
 								{Math.round(appearanceRate(card, cards) * 100)}%
-								{#if copiesOf(card) > 1}<span class="text-amber/70">×{copiesOf(card)}</span>{/if}
 							</span>
 							{#if card.weight <= 0}
 								<span class="shrink-0 font-mono text-[10px] text-faint">山札に入らない</span>

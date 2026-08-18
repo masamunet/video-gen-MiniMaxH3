@@ -33,7 +33,7 @@
 	import Save from '@lucide/svelte/icons/save';
 	import CopyPlus from '@lucide/svelte/icons/copy-plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { aliveCards, appearanceRate, cardCopies, drawParams, pileSize } from '$lib/deck';
+	import { aliveCards, appearanceRate, drawParams, pileSize } from '$lib/deck';
 	import { randomId } from '$lib/compat';
 	import { copyText } from '$lib/compat';
 	import { billableSeconds, fmtCost } from '$lib/cost';
@@ -202,7 +202,7 @@
 		deck.value = deck.value.filter((c) => c.id !== id);
 	}
 
-	/** デッキから生成回数分を重み付き抽選してキューに投入する */
+	/** デッキから生成回数分を引いてキューに投入する (実行ボタン1回 = 新しい山札からのドロー) */
 	async function runDeck() {
 		if (submitting) return;
 		const list = drawParams($state.snapshot(deck.value), deckBatchCount);
@@ -904,7 +904,7 @@
 							class="flex items-center gap-1.5 rounded-lg bg-amber px-3 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-amber/85 disabled:cursor-not-allowed disabled:opacity-40"
 							onclick={runDeck}
 							disabled={aliveCards(deck.value).length === 0 || submitting}
-							title="山札 ({pileSize(deck.value)}枚) をシャッフルして {deckBatchCount} 回引き、キューに投入する (同じカードは山札を引き切るまで再登場しない)"
+							title="山札 ({pileSize(deck.value)}枚) から重み確率で {deckBatchCount} 枚引いてキューに投入する (引いたカードは山札を引き切るまで再登場しない)"
 						>
 							<Play size={11} fill="currentColor" />
 							{submitting ? '送信中…' : `${deckBatchCount}件実行`}
@@ -941,14 +941,9 @@
 							<div class="flex items-center gap-1.5">
 								<span
 									class="rounded border border-amber/25 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-amber"
-									title="長い目で見た出現率。山札1周 ({pileSize(deck.value)}枚) にこのカードが {cardCopies(deck.value).find((c) => c.card.id === card.id)?.copies ?? 0} 枚入る"
+									title="次の1枚に選ばれる確率 (重み ÷ デッキ全体の重みの合計)。引いたカードは山札から除かれ、引き切ると戻る"
 								>
 									{Math.round(appearanceRate(card, deck.value) * 100)}%
-									{#if (cardCopies(deck.value).find((c) => c.card.id === card.id)?.copies ?? 0) > 1}
-										<span class="text-amber/70"
-											>×{cardCopies(deck.value).find((c) => c.card.id === card.id)?.copies}</span
-										>
-									{/if}
 								</span>
 								{#if card.weight <= 0}
 									<span class="font-mono text-[9px] text-faint">出現しない</span>
