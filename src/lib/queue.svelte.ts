@@ -11,7 +11,8 @@ import {
 	submitWorkflow,
 	interrupt,
 	targetFromSettings,
-	type BackendTarget
+	type BackendTarget,
+	type SubmitResult
 } from './comfy';
 
 export const MAX_BATCH = 10;
@@ -19,6 +20,10 @@ export const MAX_BATCH = 10;
 const POLL_INTERVAL = 1500;
 /** history にもキューにも見つからない状態がこの回数続いたら諦める */
 const UNKNOWN_LIMIT = 5;
+/** 通信できない状態がこの回数続いたら諦める (1.5秒 × 80 ≒ 2分) */
+const OFFLINE_LIMIT = 80;
+/** 瞬断で警告を出さないよう、この回数続いてから「再接続待ち」を表示する */
+const OFFLINE_NOTICE = 3;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -38,10 +43,24 @@ class QueueStore {
 	constructor() {
 		if (!browser) return;
 		// リロードで中断されたジョブのポーリングを再開する
-		queueMicrotask(() => {
-			for (const job of jobs.value) this.#poll($state.snapshot(job));
-			this.#syncTicker();
+		queueMicrotask(() => this.resume());
+		// オフラインやスリープでポーリングが途切れたジョブを拾い直す。
+		// これが無いと監視の止まったジョブがキューに残り続け、
+		// busy 扱いのまま「API サーバー」などの操作が効かなくなる
+		const wake = () => this.resume();
+		window.addEventListener('online', wake);
+		window.addEventListener('focus', wake);
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden) wake();
 		});
+	}
+
+	/** ポーリングが止まっているジョブの監視を再開する */
+	resume() {
+		for (const job of jobs.value) {
+			if (!this.#polling.has(job.id)) this.#poll($state.snapshot(job));
+		}
+		this.#syncTicker();
 	}
 
 	get list(): QueueJob[] {
@@ -87,7 +106,13 @@ class QueueStore {
 
 		for (let i = 0; i < items.length; i++) {
 			// buildWorkflow はノイズシードとランダムプロンプトのシードを毎回振り直す
-			const res = await submitWorkflow(target, buildWorkflow(items[i]));
+			let res: SubmitResult;
+			try {
+				res = await submitWorkflow(target, buildWorkflow(items[i]));
+			} catch {
+				this.error = 'サーバーに接続できませんでした';
+				break;
+			}
 			if (res.error || !res.prompt_id) {
 				this.error = res.error ?? '送信に失敗しました';
 				break;
@@ -116,13 +141,28 @@ class QueueStore {
 	async #poll(job: QueueJob) {
 		if (this.#polling.has(job.id)) return;
 		this.#polling.add(job.id);
+		try {
+			await this.#pollLoop(job);
+		} catch (e) {
+			// 想定外の例外でループを抜けると、ジョブがキューに残ったまま二度と
+			// 監視されず busy が解除されなくなるので、必ずキューから外す
+			this.error = e instanceof Error ? e.message : 'ジョブの監視に失敗しました';
+			this.#remove(job.id);
+		} finally {
+			// 再開 (resume) できるよう、抜けたら必ず監視中の印を消す
+			this.#polling.delete(job.id);
+		}
+	}
 
+	async #pollLoop(job: QueueJob) {
 		const target: BackendTarget = {
 			backend: job.backend,
 			host: job.host,
 			endpointId: job.endpointId
 		};
 		let unknown = 0;
+		let offline = 0;
+		let notice = '';
 
 		while (this.#polling.has(job.id)) {
 			await sleep(POLL_INTERVAL);
@@ -169,6 +209,27 @@ class QueueStore {
 				this.#remove(job.id);
 				return;
 			}
+			// 通信不能はジョブの失敗ではないので、しばらく待って再試行する
+			if (st.state === 'offline') {
+				offline++;
+				if (offline >= OFFLINE_LIMIT) {
+					this.error = `${st.message} (再接続できないため監視を打ち切りました)`;
+					this.#remove(job.id);
+					return;
+				}
+				if (offline === OFFLINE_NOTICE && this.error === '') {
+					notice = `${st.message} · 再接続を待っています`;
+					this.error = notice;
+				}
+				continue;
+			}
+			if (offline > 0) {
+				offline = 0;
+				// 自分で出した再接続待ちの表示だけを消す
+				if (notice && this.error === notice) this.error = '';
+				notice = '';
+			}
+
 			if (st.state === 'queued') {
 				this.#update(job.id, { state: 'queued', position: st.position });
 			} else if (st.state === 'running') {

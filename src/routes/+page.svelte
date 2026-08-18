@@ -369,11 +369,13 @@
 					<label class="mb-1.5 block text-xs font-medium text-mute" for="backend">
 						API サーバー
 					</label>
+					<!-- ジョブは投入時のバックエンドを自分で覚えているので、
+					     生成中でも切り替えてよい (送信中だけ固定する) -->
 					<select
 						id="backend"
 						class="field-input"
 						bind:value={settings.value.backend}
-						disabled={busy}
+						disabled={submitting}
 					>
 						<option value="comfy">デスクトップマシン (ComfyUI)</option>
 						<option value="runpod">RunPod Serverless</option>

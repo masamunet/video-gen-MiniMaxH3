@@ -56,6 +56,11 @@ export type PollState =
 	| { state: 'error'; message: string }
 	/** 中断されたジョブ (エラーではない) */
 	| { state: 'cancelled' }
+	/**
+	 * 一時的に状態を取得できなかった (オフライン / サーバー再起動 / バックエンド未応答)。
+	 * ジョブ自体は生きている可能性が高いのでリトライする
+	 */
+	| { state: 'offline'; message: string }
 	| { state: 'unknown' };
 
 export async function pollStatus(target: BackendTarget, promptId: string): Promise<PollState> {
@@ -64,12 +69,20 @@ export async function pollStatus(target: BackendTarget, promptId: string): Promi
 		host: target.host,
 		endpointId: target.endpointId
 	});
-	const res = await fetch(`/api/status/${encodeURIComponent(promptId)}?${q}`);
-	if (!res.ok) {
-		const data = await res.json().catch(() => ({}));
-		return { state: 'error', message: data.error ?? `状態取得に失敗しました (${res.status})` };
+	// ここで例外を投げるとポーリングのループが止まり、ジョブがキューに残って
+	// 生成中扱いのまま操作不能になるため、通信の失敗は必ず offline として返す
+	try {
+		const res = await fetch(`/api/status/${encodeURIComponent(promptId)}?${q}`);
+		if (!res.ok) {
+			const data = await res.json().catch(() => ({}));
+			const message = data.error ?? `状態取得に失敗しました (${res.status})`;
+			// 5xx はバックエンドに一時的に届かないだけのことが多いのでリトライ扱い
+			return res.status >= 500 ? { state: 'offline', message } : { state: 'error', message };
+		}
+		return (await res.json()) as PollState;
+	} catch {
+		return { state: 'offline', message: 'サーバーに接続できません' };
 	}
-	return res.json();
 }
 
 export async function interrupt(target: BackendTarget, jobId?: string): Promise<void> {
