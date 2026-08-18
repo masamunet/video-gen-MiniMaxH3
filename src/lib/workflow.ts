@@ -61,16 +61,21 @@ const TEMPLATE = {
 		class_type: 'SaveVideo',
 		_meta: { title: 'ビデオを保存' }
 	},
-	'145:142': {
-		inputs: { text: ['145:119', 0], src_lang: 'auto', dest_lang: 'en' },
-		class_type: 'GFDeepTranslate',
-		_meta: { title: '🐵 GF Deep Translate' }
+	'145:155': {
+		inputs: {
+			from_translate: 'ja',
+			to_translate: 'en',
+			manual_translate: false,
+			text: ['145:119', 0]
+		},
+		class_type: 'GoogleTranslateTextNode',
+		_meta: { title: 'Google Translate Text Node' }
 	},
 	'145:141': {
 		inputs: {
 			text_display: '',
 			mode: '🔄 Always Update',
-			text_input: ['145:142', 0]
+			text_input: ['145:155', 0]
 		},
 		class_type: 'M_ShowText',
 		_meta: { title: 'Show Text (Debug)' }
