@@ -10,6 +10,7 @@
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
 	import { billableSeconds, fmtCost, fmtCostTotal } from '$lib/cost';
 	import { previewVideo } from '$lib/media';
+	import { normalizeUpscaleBy } from '$lib/workflow';
 	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
 	import Download from '@lucide/svelte/icons/download';
 	import VideoModal from '$lib/components/VideoModal.svelte';
@@ -177,6 +178,9 @@
 								<span>{rec.params.aspectRatio.split(' ')[0]}</span>
 								<span>{rec.params.megapixels}MP</span>
 								<span>{rec.params.duration}s</span>
+								{#if rec.params.upscale}
+									<span class="text-amber/80">×{normalizeUpscaleBy(rec.params.upscaleBy).toFixed(1)}</span>
+								{/if}
 								{#if rec.backend === 'runpod'}
 									<span class="text-amber/80">
 										{fmtCost(billableSeconds(rec), costSettings)}

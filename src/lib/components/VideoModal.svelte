@@ -10,6 +10,7 @@
 	import TestPattern from './TestPattern.svelte';
 	import { playableVideo } from '$lib/media';
 	import { fmtSeconds, videoUrl } from '$lib/comfy';
+	import { normalizeUpscaleBy } from '$lib/workflow';
 
 	let {
 		open = $bindable(false),
@@ -132,6 +133,9 @@
 						<span>{record.params.megapixels}MP</span>
 						<span>{record.params.duration}s</span>
 						<span>{record.params.steps}steps</span>
+						{#if record.params.upscale}
+							<span>Upscale ×{normalizeUpscaleBy(record.params.upscaleBy).toFixed(1)}</span>
+						{/if}
 						<span>{new Date(record.date).toLocaleString('ja-JP')}</span>
 					</div>
 				</div>

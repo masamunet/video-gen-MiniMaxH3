@@ -6,15 +6,34 @@ export interface GenParams {
 	megapixels: number;
 	duration: number;
 	steps: number;
+	/**
+	 * Latent Upscale を使うか。false のとき ComfyUI 側でバイパスしているのと同じで、
+	 * サンプラーには MiniMaxH3ImageToVideo のラテントがそのまま渡る。
+	 */
+	upscale: boolean;
+	/** Latent Upscale の倍率 (upscale が true のときだけ効く) */
+	upscaleBy: number;
 }
+
+/** Latent Upscale の倍率の入力範囲 */
+export const UPSCALE_RANGE = { min: 1.2, max: 1.5, step: 0.1 };
 
 export const DEFAULT_PARAMS: GenParams = {
 	prompt: '',
 	aspectRatio: '3:4 (Portrait Standard)',
 	megapixels: 0.5,
 	duration: 5,
-	steps: 4
+	steps: 4,
+	upscale: false,
+	upscaleBy: UPSCALE_RANGE.min
 };
+
+/** 旧データ (upscale 未保存) や範囲外の値を入力範囲に丸める */
+export function normalizeUpscaleBy(v: number | undefined | null): number {
+	const n = Math.round(Number(v) * 10) / 10;
+	if (!Number.isFinite(n)) return UPSCALE_RANGE.min;
+	return Math.min(UPSCALE_RANGE.max, Math.max(UPSCALE_RANGE.min, n));
+}
 
 /** ResolutionSelector が取得できない場合のフォールバック選択肢 */
 export const FALLBACK_ASPECT_RATIOS = [
@@ -34,6 +53,8 @@ export const JP_CAPTURE_ID = '990';
 export const EN_FINAL_ID = '145:146';
 /** SaveVideo ノードID */
 export const SAVE_VIDEO_ID = '150';
+/** MiniMaxH3LatentUpscaleCombined (バイパス解除時だけ差し込む) のノードID */
+export const UPSCALE_ID = '105:129';
 
 const TEMPLATE = {
 	'115': {
@@ -260,6 +281,29 @@ export function buildWorkflow(params: GenParams): Record<string, unknown> {
 	wf['145:119'].inputs.text = params.prompt;
 	wf['145:119'].inputs.seed = randomSeed(2 ** 31);
 	wf['105:15'].inputs.noise_seed = randomSeed(Number.MAX_SAFE_INTEGER);
+
+	// Latent Upscale: 有効なときだけノードを差し込み、サンプラーとガイダーの入力を
+	// 差し替える (reference/video_minimax_h3_t2v-upscale.json と同じ結線)。
+	// 出力は [0]=latent / [1]=positive / [2]=negative。
+	// 無効時は元の API JSON (バイパス状態) と同じ結線のまま。
+	if (params.upscale) {
+		wf[UPSCALE_ID] = {
+			inputs: {
+				scale_by: normalizeUpscaleBy(params.upscaleBy),
+				method: 'bilinear',
+				audio_denoise: 1,
+				samples: ['105:104', 1],
+				model: ['105:127', 0],
+				noise: ['105:15', 0],
+				sigmas: ['105:9', 0],
+				positive: ['105:104', 0]
+			},
+			class_type: 'MiniMaxH3LatentUpscaleCombined',
+			_meta: { title: 'MiniMax H3 Latent Upscale Combined' }
+		};
+		wf['105:14'].inputs.latent_image = [UPSCALE_ID, 0];
+		wf['105:16'].inputs.conditioning = [UPSCALE_ID, 1];
+	}
 
 	// ランダムプロンプト整形後(翻訳前)の日本語テキストを履歴出力に載せる
 	wf[JP_CAPTURE_ID] = {

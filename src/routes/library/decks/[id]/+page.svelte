@@ -11,7 +11,12 @@
 	import { deck, editingDeckId, type DeckCard, type SavedDeck } from '$lib/stores.svelte';
 	import { appearanceRate, pileSize } from '$lib/deck';
 	import { computeResolution } from '$lib/resolution';
-	import { FALLBACK_ASPECT_RATIOS, DEFAULT_PARAMS } from '$lib/workflow';
+	import {
+		FALLBACK_ASPECT_RATIOS,
+		DEFAULT_PARAMS,
+		UPSCALE_RANGE,
+		normalizeUpscaleBy
+	} from '$lib/workflow';
 	import { randomId } from '$lib/compat';
 
 	const deckId = $derived(page.params.id ?? '');
@@ -292,6 +297,50 @@
 									oninput={(e) => (cards[i].params.steps = Number(e.currentTarget.value) || 4)}
 								/>
 							</div>
+						</div>
+
+						<div class="mt-3 flex flex-wrap items-center gap-3">
+							<span class="text-[10px] text-faint">Latent Upscale</span>
+							<div
+								class="flex shrink-0 overflow-hidden rounded-lg border border-edge text-[10px] font-medium"
+								role="group"
+								aria-label="Latent Upscale の有効/無効"
+							>
+								<button
+									type="button"
+									class="px-2.5 py-1 transition-colors {card.params.upscale
+										? 'text-faint hover:text-mute'
+										: 'bg-amber/15 text-amber'}"
+									aria-pressed={!card.params.upscale}
+									onclick={() => (cards[i].params.upscale = false)}
+								>
+									Disable
+								</button>
+								<button
+									type="button"
+									class="border-l border-edge px-2.5 py-1 transition-colors {card.params.upscale
+										? 'bg-amber/15 text-amber'
+										: 'text-faint hover:text-mute'}"
+									aria-pressed={card.params.upscale}
+									onclick={() => {
+										cards[i].params.upscale = true;
+										cards[i].params.upscaleBy = normalizeUpscaleBy(card.params.upscaleBy);
+									}}
+								>
+									Enable
+								</button>
+							</div>
+							<input
+								type="number"
+								class="field-input w-20 py-1.5 text-center font-mono text-xs"
+								min={UPSCALE_RANGE.min}
+								max={UPSCALE_RANGE.max}
+								step={UPSCALE_RANGE.step}
+								disabled={!card.params.upscale}
+								value={normalizeUpscaleBy(card.params.upscaleBy)}
+								oninput={(e) =>
+									(cards[i].params.upscaleBy = normalizeUpscaleBy(Number(e.currentTarget.value)))}
+							/>
 						</div>
 
 						<div class="mt-3 flex items-center gap-3">

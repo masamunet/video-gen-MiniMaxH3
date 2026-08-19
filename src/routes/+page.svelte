@@ -37,7 +37,7 @@
 	import { randomId } from '$lib/compat';
 	import { copyText } from '$lib/compat';
 	import { billableSeconds, fmtCost } from '$lib/cost';
-	import { FALLBACK_ASPECT_RATIOS } from '$lib/workflow';
+	import { FALLBACK_ASPECT_RATIOS, UPSCALE_RANGE, normalizeUpscaleBy } from '$lib/workflow';
 	import { videoUrl, fetchResolutionOptions, fmtSeconds, fmtMinSec } from '$lib/comfy';
 	import { queue, jobElapsed, MAX_BATCH } from '$lib/queue.svelte';
 	import { previewVideo } from '$lib/media';
@@ -53,6 +53,9 @@
 	const resolution = $derived(
 		computeResolution(params.value.aspectRatio, params.value.megapixels)
 	);
+
+	/** Latent Upscale の倍率 (旧設定に値がない場合に備えて丸めた表示用の値) */
+	const upscaleScale = $derived(normalizeUpscaleBy(params.value.upscaleBy));
 
 	/** 同時に投入する本数 (ComfyUI の Batch Count 相当) */
 	let batchCount = $state(1);
@@ -136,8 +139,16 @@
 		const mp = Math.min(MP_RANGE.max, Math.max(MP_RANGE.min, Math.round(p.megapixels * 10) / 10));
 		const duration = Math.min(20, Math.max(5, Math.round(p.duration)));
 		const steps = Math.min(35, Math.max(4, Math.round(p.steps)));
-		if (mp !== p.megapixels || duration !== p.duration || steps !== p.steps) {
-			params.value = { ...p, megapixels: mp, duration, steps };
+		const upscale = p.upscale === true;
+		const upscaleBy = normalizeUpscaleBy(p.upscaleBy);
+		if (
+			mp !== p.megapixels ||
+			duration !== p.duration ||
+			steps !== p.steps ||
+			upscale !== p.upscale ||
+			upscaleBy !== p.upscaleBy
+		) {
+			params.value = { ...p, megapixels: mp, duration, steps, upscale, upscaleBy };
 		}
 	});
 
@@ -459,6 +470,69 @@
 							bind:value={params.value.megapixels}
 						/>
 					</div>
+				</div>
+
+				<!-- Latent Upscale (ComfyUI 側のバイパス解除に相当) -->
+				<div>
+					<div class="mb-1.5 flex items-center justify-between gap-2">
+						<label class="text-xs font-medium text-mute" for="upscale-by">
+							Latent Upscale
+							<span class="ml-1 font-mono text-amber">
+								{params.value.upscale ? `×${upscaleScale.toFixed(1)}` : 'OFF'}
+							</span>
+						</label>
+						<div
+							class="flex shrink-0 overflow-hidden rounded-lg border border-edge text-[10px] font-medium"
+							role="group"
+							aria-label="Latent Upscale の有効/無効"
+						>
+							<button
+								type="button"
+								class="px-2.5 py-1 transition-colors {params.value.upscale
+									? 'text-faint hover:text-mute'
+									: 'bg-amber/15 text-amber'}"
+								aria-pressed={!params.value.upscale}
+								onclick={() => (params.value = { ...params.value, upscale: false })}
+							>
+								Disable
+							</button>
+							<button
+								type="button"
+								class="border-l border-edge px-2.5 py-1 transition-colors {params.value.upscale
+									? 'bg-amber/15 text-amber'
+									: 'text-faint hover:text-mute'}"
+								aria-pressed={params.value.upscale}
+								onclick={() => (params.value = { ...params.value, upscale: true })}
+							>
+								Enable
+							</button>
+						</div>
+					</div>
+					<div class="flex items-center gap-3">
+						<input
+							id="upscale-by"
+							type="range"
+							class="fader flex-1"
+							min={UPSCALE_RANGE.min}
+							max={UPSCALE_RANGE.max}
+							step={UPSCALE_RANGE.step}
+							disabled={!params.value.upscale}
+							bind:value={params.value.upscaleBy}
+							style={fill(upscaleScale, UPSCALE_RANGE.min, UPSCALE_RANGE.max)}
+						/>
+						<input
+							type="number"
+							class="field-input w-20 text-center font-mono text-xs"
+							min={UPSCALE_RANGE.min}
+							max={UPSCALE_RANGE.max}
+							step={UPSCALE_RANGE.step}
+							disabled={!params.value.upscale}
+							bind:value={params.value.upscaleBy}
+						/>
+					</div>
+					<p class="mt-1.5 text-[10px] text-faint">
+						サンプリング前のラテントを拡大する (無効時はワークフロー上でバイパス)
+					</p>
 				</div>
 
 				<!-- duration / steps -->
@@ -809,7 +883,10 @@
 							</button>
 							<span class="ml-auto font-mono text-[10px] text-faint">
 								{viewRecord.params.aspectRatio} · {viewRecord.params.megapixels}MP ·
-								{viewRecord.params.duration}s · {viewRecord.params.steps}steps
+								{viewRecord.params.duration}s · {viewRecord.params.steps}steps{#if viewRecord.params
+									.upscale} · Upscale ×{normalizeUpscaleBy(viewRecord.params.upscaleBy).toFixed(
+										1
+									)}{/if}
 							</span>
 						</div>
 					</div>
@@ -992,6 +1069,9 @@
 								<span>{card.params.megapixels}MP</span>
 								<span>{card.params.duration}s</span>
 								<span>{card.params.steps}steps</span>
+								{#if card.params.upscale}
+									<span class="text-amber/80">×{normalizeUpscaleBy(card.params.upscaleBy).toFixed(1)}</span>
+								{/if}
 							</div>
 							<div class="mt-1.5 flex items-center gap-2">
 								<span class="shrink-0 text-[9px] text-mute">重み</span>
@@ -1070,6 +1150,9 @@
 								</span>
 								<span>{job.params.megapixels}MP</span>
 								<span>{job.params.duration}s</span>
+								{#if job.params.upscale}
+									<span class="text-amber/80">×{normalizeUpscaleBy(job.params.upscaleBy).toFixed(1)}</span>
+								{/if}
 								<span class="ml-auto">{job.backend === 'runpod' ? 'RunPod' : 'Desktop'}</span>
 							</div>
 						</div>

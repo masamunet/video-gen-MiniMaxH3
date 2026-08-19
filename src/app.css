@@ -145,6 +145,10 @@ input[type='range'].fader::-webkit-slider-thumb:hover {
 	transform: scale(1.15);
 	background: #fff;
 }
+input[type='range'].fader:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
 input[type='range'].fader::-moz-range-thumb {
 	width: 14px;
 	height: 14px;
