@@ -55,6 +55,9 @@ dev / prod の DB を相互にコピー・マージするコードや運用を�
 - ComfyUI ホスト既定: `http://localhost:8000/` (設定ダイアログで変更可)
 - 動作確認で実際に動画生成する際は**メガピクセルを 0.1 に下げる** (GPU時間節約)
 - ComfyUI の `M_ShowText` は history 出力で `text` ではなく `text_display` キーを使う
-- 本番は `http://ホスト名:3000` の**非セキュアコンテキスト**でアクセスされるため、
-  `crypto.randomUUID` / `navigator.clipboard` は直接使わず
+- 本番は `npm start` (`http://localhost:3000`) で、待ち受けはループバックのみ。
+  同じマシンからしか使わない前提なので LAN には公開しない
+- localhost はセキュアコンテキストなので通知・クリップボードなどの API は本番でも使える。
+  ただし `HOST=0.0.0.0` で LAN 公開してホスト名や IP で開くと非セキュアコンテキストになり
+  これらが一斉に落ちるため、`crypto.randomUUID` / `navigator.clipboard` は直接使わず
   [src/lib/compat.ts](src/lib/compat.ts) の `randomId()` / `copyText()` を使うこと

@@ -222,7 +222,7 @@
 					<p class="mt-1.5 text-[11px] leading-relaxed text-faint">
 						{#if notifyState === 'unsupported'}
 							この環境では通知を利用できません。ブラウザの通知 API は https か localhost
-							でのみ動作します(本番の http://ホスト名:3000 は対象外)。
+							でのみ動作します(ホスト名や IP で開いた場合は対象外)。
 						{:else if notifyState === 'denied'}
 							ブラウザで通知がブロックされています。アドレスバーのサイト設定から許可してください。
 						{:else}
