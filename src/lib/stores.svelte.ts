@@ -82,9 +82,10 @@ export interface HistoryRecord {
 }
 
 export const settings = new Persisted<Settings>('vg:settings', {
-	host: 'http://localhost:8000/',
+	// PUBLIC_ で始まる値だけをブラウザへ公開する。認証情報はここに置かない。
+	host: import.meta.env.PUBLIC_COMFYUI_HOST || 'http://localhost:8000/',
 	backend: 'comfy',
-	runpodEndpointId: 'your-runpod-endpoint-id',
+	runpodEndpointId: import.meta.env.PUBLIC_RUNPOD_ENDPOINT_ID || '',
 	runpodCostPerHour: 1.1,
 	runpodExecutionTimeoutMin: DEFAULT_EXEC_TIMEOUT_MIN,
 	usdJpy: 165,

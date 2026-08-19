@@ -33,7 +33,7 @@ dev / prod の DB を相互にコピー・マージするコードや運用を�
 
 ## RunPod Serverless
 
-- 生成バックエンドとして RunPod Serverless (Endpoint `your-runpod-endpoint-id`) を選択可能。
+- 生成バックエンドとして RunPod Serverless を選択可能（Endpoint ID は設定ダイアログで指定）。
   送信形式は `{input:{workflow}}`、結果は `output.images[].data` (base64) で返る
 - API キー (`rpa_...`) は環境変数 `RUNPOD_API_KEY` で渡す。ローカルでは
   プロジェクト直下の `.env` に書いてよい (`.env` は gitignore 済み)。
@@ -52,7 +52,8 @@ dev / prod の DB を相互にコピー・マージするコードや運用を�
 ## 開発メモ
 
 - 起動: `npm run dev` (ポート5173)。型チェック: `npm run check`
-- ComfyUI ホスト既定: `http://localhost:8000/` (設定ダイアログで変更可)
+- ComfyUI ホストの初期値: `.env` の `PUBLIC_COMFYUI_HOST` (未指定時は `http://localhost:8000/`、設定ダイアログで変更可)
+- RunPod Endpoint ID の初期値: `.env` の `PUBLIC_RUNPOD_ENDPOINT_ID` (公開値。API キーを書かないこと)
 - 動作確認で実際に動画生成する際は**メガピクセルを 0.1 に下げる** (GPU時間節約)
 - ComfyUI の `M_ShowText` は history 出力で `text` ではなく `text_display` キーを使う
 - 本番は `npm start` (`http://localhost:3000`) で、待ち受けはループバックのみ。
