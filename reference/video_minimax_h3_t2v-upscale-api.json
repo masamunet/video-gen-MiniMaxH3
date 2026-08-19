@@ -2,33 +2,12 @@
   "115": {
     "inputs": {
       "aspect_ratio": "3:4 (Portrait Standard)",
-      "megapixels": 0.5,
+      "megapixels": 0.1,
       "multiple": 32
     },
     "class_type": "ResolutionSelector",
     "_meta": {
       "title": "解像度セレクター"
-    }
-  },
-  "122": {
-    "inputs": {
-      "value": [
-        "123",
-        0
-      ]
-    },
-    "class_type": "ComfyNumberConvert",
-    "_meta": {
-      "title": "数値変換"
-    }
-  },
-  "123": {
-    "inputs": {
-      "value": 12
-    },
-    "class_type": "PrimitiveInt",
-    "_meta": {
-      "title": "duration"
     }
   },
   "150": {
@@ -46,26 +25,21 @@
       "title": "ビデオを保存"
     }
   },
-  "145:142": {
+  "151": {
     "inputs": {
-      "text": [
-        "145:119",
-        0
-      ],
-      "src_lang": "auto",
-      "dest_lang": "en"
+      "value": 4
     },
-    "class_type": "GFDeepTranslate",
+    "class_type": "PrimitiveInt",
     "_meta": {
-      "title": "🐵 GF Deep Translate"
+      "title": "steps"
     }
   },
   "145:141": {
     "inputs": {
-      "text_display": "Rooftop, mountains and city in the background",
+      "text_display": "",
       "mode": "🔄 Always Update",
       "text_input": [
-        "145:142",
+        "145:155",
         0
       ]
     },
@@ -76,8 +50,8 @@
   },
   "145:119": {
     "inputs": {
-      "text": "屋上、背景には山と街",
-      "seed": 367,
+      "text": "",
+      "seed": 868,
       "autorefresh": "No"
     },
     "class_type": "DPRandomGenerator",
@@ -87,7 +61,7 @@
   },
   "145:146": {
     "inputs": {
-      "text_display": "Rooftop, mountains and city in the background",
+      "text_display": "",
       "mode": "🔄 Always Update",
       "text_input": [
         "145:147",
@@ -114,6 +88,43 @@
     "class_type": "RestoreDialogTags",
     "_meta": {
       "title": "Restore Dialog Tags (no-translate <d>)"
+    }
+  },
+  "145:155": {
+    "inputs": {
+      "from_translate": "ja",
+      "to_translate": "en",
+      "manual_translate": false,
+      "Manual Trasnlate": null,
+      "text": [
+        "145:119",
+        0
+      ]
+    },
+    "class_type": "GoogleTranslateTextNode",
+    "_meta": {
+      "title": "Google Translate Text Node"
+    }
+  },
+  "152:122": {
+    "inputs": {
+      "value": [
+        "152:123",
+        0
+      ]
+    },
+    "class_type": "ComfyNumberConvert",
+    "_meta": {
+      "title": "数値変換"
+    }
+  },
+  "152:123": {
+    "inputs": {
+      "value": 5
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "duration"
     }
   },
   "105:11": {
@@ -178,7 +189,10 @@
   "105:9": {
     "inputs": {
       "scheduler": "beta",
-      "steps": 4,
+      "steps": [
+        "151",
+        0
+      ],
       "denoise": 1,
       "model": [
         "105:127",
@@ -209,8 +223,8 @@
         0
       ],
       "latent_image": [
-        "105:104",
-        1
+        "105:129",
+        0
       ]
     },
     "class_type": "SamplerCustomAdvanced",
@@ -225,8 +239,8 @@
         0
       ],
       "conditioning": [
-        "105:104",
-        0
+        "105:129",
+        1
       ]
     },
     "class_type": "BasicGuider",
@@ -257,7 +271,7 @@
   },
   "105:15": {
     "inputs": {
-      "noise_seed": 812151496287661
+      "noise_seed": 461680770952593
     },
     "class_type": "RandomNoise",
     "_meta": {
@@ -330,7 +344,7 @@
   "105:111": {
     "inputs": {
       "value": [
-        "122",
+        "152:122",
         0
       ]
     },
@@ -380,6 +394,37 @@
     "class_type": "LoraLoaderModelOnly",
     "_meta": {
       "title": "LoRAローダーモデルのみ"
+    }
+  },
+  "105:129": {
+    "inputs": {
+      "scale_by": 1.2,
+      "method": "bilinear",
+      "audio_denoise": 1,
+      "samples": [
+        "105:104",
+        1
+      ],
+      "model": [
+        "105:127",
+        0
+      ],
+      "noise": [
+        "105:15",
+        0
+      ],
+      "sigmas": [
+        "105:9",
+        0
+      ],
+      "positive": [
+        "105:104",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3LatentUpscaleCombined",
+    "_meta": {
+      "title": "MiniMax H3 Latent Upscale Combined"
     }
   }
 }
