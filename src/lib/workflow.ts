@@ -283,7 +283,7 @@ export function buildWorkflow(params: GenParams): Record<string, unknown> {
 	wf['105:15'].inputs.noise_seed = randomSeed(Number.MAX_SAFE_INTEGER);
 
 	// Latent Upscale: 有効なときだけノードを差し込み、サンプラーとガイダーの入力を
-	// 差し替える (reference/video_minimax_h3_t2v-upscale.json と同じ結線)。
+	// 差し替える (reference/video_minimax_h3_t2v-upscale-api.json と同じ結線)。
 	// 出力は [0]=latent / [1]=positive / [2]=negative。
 	// 無効時は元の API JSON (バイパス状態) と同じ結線のまま。
 	if (params.upscale) {

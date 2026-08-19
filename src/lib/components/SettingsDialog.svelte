@@ -3,7 +3,14 @@
 	import X from '@lucide/svelte/icons/x';
 	import ServerCog from '@lucide/svelte/icons/server-cog';
 	import CircleDollarSign from '@lucide/svelte/icons/circle-dollar-sign';
+	import Bell from '@lucide/svelte/icons/bell';
 	import { settings, DEFAULT_EXEC_TIMEOUT_MIN, type Backend } from '$lib/stores.svelte';
+	import {
+		notifySupported,
+		notifyPermission,
+		requestNotifyPermission,
+		showNotification
+	} from '$lib/compat';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
@@ -13,6 +20,8 @@
 	let draftTimeoutMin = $state(DEFAULT_EXEC_TIMEOUT_MIN);
 	let draftCostPerHour = $state(1.1);
 	let draftUsdJpy = $state(165);
+	let draftNotify = $state(false);
+	let notifyState = $state<'granted' | 'denied' | 'default' | 'unsupported'>('unsupported');
 
 	$effect(() => {
 		if (open) {
@@ -22,8 +31,26 @@
 			draftTimeoutMin = settings.value.runpodExecutionTimeoutMin ?? DEFAULT_EXEC_TIMEOUT_MIN;
 			draftCostPerHour = settings.value.runpodCostPerHour ?? 1.1;
 			draftUsdJpy = settings.value.usdJpy ?? 165;
+			draftNotify = settings.value.notifyOnComplete ?? false;
+			// 開くたびに許可状態を取り直す。ユーザーがブラウザ設定側で変えている可能性があるため
+			notifyState = notifyPermission();
 		}
 	});
+
+	/** ON にしたときだけ許可を要求する (許可要求はユーザー操作起点でないとブラウザに無視される) */
+	async function toggleNotify(next: boolean) {
+		if (!next) {
+			draftNotify = false;
+			return;
+		}
+		if (!notifySupported()) {
+			draftNotify = false;
+			notifyState = 'unsupported';
+			return;
+		}
+		notifyState = await requestNotifyPermission();
+		draftNotify = notifyState === 'granted';
+	}
 
 	/** RunPod の policy.executionTimeout に渡せる範囲 (1〜180 分) に丸める */
 	function clampTimeout(min: number): number {
@@ -39,7 +66,9 @@
 			runpodEndpointId: draftEndpointId.trim(),
 			runpodExecutionTimeoutMin: clampTimeout(Number(draftTimeoutMin)),
 			runpodCostPerHour: Number(draftCostPerHour) || 0,
-			usdJpy: Number(draftUsdJpy) || 0
+			usdJpy: Number(draftUsdJpy) || 0,
+			// 保存時にも許可状態を再確認し、拒否されていれば ON のまま保存しない
+			notifyOnComplete: draftNotify && notifyPermission() === 'granted'
 		};
 		open = false;
 	}
@@ -174,6 +203,50 @@
 					<p class="mt-2 text-[11px] leading-relaxed text-faint">
 						RunPod 生成の動画に、ワーカーの実行時間から算出したコスト概算を表示します。
 					</p>
+				</div>
+
+				<div class="border-t border-edge pt-4">
+					<span class="mb-2 flex items-center gap-1.5 text-xs font-medium text-mute">
+						<Bell size={13} class="text-amber" />
+						デスクトップ通知
+					</span>
+					<label class="flex items-center gap-2 text-xs text-ink">
+						<input
+							type="checkbox"
+							checked={draftNotify}
+							onchange={(e) => toggleNotify(e.currentTarget.checked)}
+							disabled={notifyState === 'unsupported'}
+						/>
+						生成が完了したら通知する
+					</label>
+					<p class="mt-1.5 text-[11px] leading-relaxed text-faint">
+						{#if notifyState === 'unsupported'}
+							この環境では通知を利用できません。ブラウザの通知 API は https か localhost
+							でのみ動作します(本番の http://ホスト名:3000 は対象外)。
+						{:else if notifyState === 'denied'}
+							ブラウザで通知がブロックされています。アドレスバーのサイト設定から許可してください。
+						{:else}
+							タブが非表示・非フォーカスのときだけ通知します。macOS
+							側でもブラウザの通知が許可されている必要があります(システム設定 → 通知)。
+						{/if}
+					</p>
+					{#if notifyState === 'granted'}
+						<!-- 通常の通知はタブが非表示・非フォーカスのときだけ出すが、
+						     テスト通知は設定直後にこの画面を見ている状態で押すため、
+						     ここで何も起きないと壊れているように見える。よって
+						     showNotification を直接呼び、可視状態でも必ず出す -->
+						<button
+							class="mt-2 rounded-lg border border-edge px-3 py-1.5 text-[11px] font-medium text-mute transition-colors hover:border-edge2 hover:text-ink"
+							onclick={() =>
+								showNotification({
+									title: '通知テスト',
+									body: 'デスクトップ通知は有効です',
+									group: 'vg:test'
+								})}
+						>
+							テスト通知
+						</button>
+					{/if}
 				</div>
 			</div>
 

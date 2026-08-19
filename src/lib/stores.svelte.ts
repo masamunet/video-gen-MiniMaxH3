@@ -54,6 +54,8 @@ export interface Settings {
 	runpodExecutionTimeoutMin: number;
 	/** ドル円レート */
 	usdJpy: number;
+	/** 生成完了時にデスクトップ通知を出すか (タブが非表示・非フォーカスのときだけ通知する) */
+	notifyOnComplete: boolean;
 }
 
 export interface VideoFile {
@@ -85,7 +87,8 @@ export const settings = new Persisted<Settings>('vg:settings', {
 	runpodEndpointId: 'your-runpod-endpoint-id',
 	runpodCostPerHour: 1.1,
 	runpodExecutionTimeoutMin: DEFAULT_EXEC_TIMEOUT_MIN,
-	usdJpy: 165
+	usdJpy: 165,
+	notifyOnComplete: false
 });
 
 export const params = new Persisted<GenParams>('vg:params', DEFAULT_PARAMS);

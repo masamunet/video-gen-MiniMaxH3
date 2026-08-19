@@ -3,8 +3,9 @@
 // (API 側に一括投入は無く、ComfyUI 本体も内部で N 回 POST している)。
 // 複数ジョブを並列にポーリングし、完了したものから履歴へ入れる。
 import { browser } from '$app/environment';
-import { jobs, history, settings, type HistoryRecord, type QueueJob } from './stores.svelte';
+import { jobs, history, settings, bossMode, type HistoryRecord, type QueueJob } from './stores.svelte';
 import { buildWorkflow, type GenParams } from './workflow';
+import { showNotification } from './compat';
 import {
 	parseOutputs,
 	pollStatus,
@@ -25,6 +26,13 @@ const OFFLINE_LIMIT = 80;
 /** 瞬断で警告を出さないよう、この回数続いてから「再接続待ち」を表示する */
 const OFFLINE_NOTICE = 3;
 
+/**
+ * 通知の group。バッチ (最大10件) で通知が溢れないよう、完了は常に1件だけ残して
+ * 件数を集約する。ただし完了のたびにバナーは出し直される (showNotification 参照)
+ */
+const NOTIFY_GROUP_DONE = 'vg:done';
+const NOTIFY_GROUP_ERROR = 'vg:error';
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 class QueueStore {
@@ -39,6 +47,8 @@ class QueueStore {
 
 	#polling = new Set<string>();
 	#ticker: ReturnType<typeof setInterval> | undefined;
+	/** ユーザーがまだ画面を見ていない完了件数 (通知の集約カウントに使う) */
+	#unseenDone = 0;
 
 	constructor() {
 		if (!browser) return;
@@ -49,10 +59,42 @@ class QueueStore {
 		// busy 扱いのまま「API サーバー」などの操作が効かなくなる
 		const wake = () => this.resume();
 		window.addEventListener('online', wake);
-		window.addEventListener('focus', wake);
-		document.addEventListener('visibilitychange', () => {
-			if (!document.hidden) wake();
+		// focus は「ユーザーが画面に戻ってきた」タイミングでもあるので、
+		// online とは別に扱い未確認件数もここでリセットする
+		window.addEventListener('focus', () => {
+			wake();
+			this.#unseenDone = 0;
 		});
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden) {
+				wake();
+				this.#unseenDone = 0;
+			}
+		});
+	}
+
+	/** 生成完了の通知。タブが見えている間は何もしない (見えていないときだけ集約通知する) */
+	#notifyDone(record: HistoryRecord) {
+		if (!settings.value.notifyOnComplete) return;
+		if (document.hidden === false && document.hasFocus()) return;
+		this.#unseenDone++;
+		const title =
+			this.#unseenDone > 1 ? `${this.#unseenDone}件の生成が完了しました` : '生成が完了しました';
+		// ボスが来たモードで通知センターにプロンプトを出すと隠す意味が無くなるため本文は出さない
+		let body: string | undefined;
+		if (!bossMode.value) {
+			const flat = record.params.prompt.replace(/\s+/g, ' ').trim();
+			body = flat ? (flat.length > 60 ? `${flat.slice(0, 60)}…` : flat) : undefined;
+		}
+		showNotification({ title, body, group: NOTIFY_GROUP_DONE });
+	}
+
+	/** 生成失敗の通知。件数集約はしない (エラーは個別に内容を確認したいため) */
+	#notifyError(message: string) {
+		if (!settings.value.notifyOnComplete) return;
+		if (document.hidden === false && document.hasFocus()) return;
+		const body = message.length > 60 ? `${message.slice(0, 60)}…` : message;
+		showNotification({ title: '生成に失敗しました', body, group: NOTIFY_GROUP_ERROR });
 	}
 
 	/** ポーリングが止まっているジョブの監視を再開する */
@@ -196,11 +238,13 @@ class QueueStore {
 				history.add(record);
 				this.batch = [...this.batch, record];
 				this.lastCompleted = record;
+				this.#notifyDone(record);
 				this.#remove(job.id);
 				return;
 			}
 			if (st.state === 'error') {
 				this.error = st.message;
+				this.#notifyError(st.message);
 				this.#remove(job.id);
 				return;
 			}

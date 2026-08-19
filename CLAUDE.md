@@ -39,8 +39,10 @@ dev / prod の DB を相互にコピー・マージするコードや運用を�
   プロジェクト直下の `.env` に書いてよい (`.env` は gitignore 済み)。
   **絶対にコミットしない・チャットや Issue に貼らない**
   - 開発 (`npm run dev`): Vite/SvelteKit が `.env` を自動読み込みする
-  - 本番 (`node build`): `.env` は自動読み込みされない。
-    `node --env-file=.env build` として起動するか、シェルで export する
+  - 本番: `npm start` で起動する (`node --env-file=.env start.js`)。
+    素の `node build` では `.env` が読み込まれないので使わないこと。
+    [start.js](start.js) は 0.0.0.0 待ち受けのまま起動ログの表示だけ localhost に直す
+    ラッパーで、`.env` の読み込みもここで担保している
 - ジョブ送信時に `policy.executionTimeout` (設定ダイアログの「実行タイムアウト」、既定
   30分) を付ける。付けないと RunPod 既定の10分で打ち切られ
   `executionTimeout exceeded` になる。コールドスタートのモデル読み込みも含まれる

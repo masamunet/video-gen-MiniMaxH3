@@ -8,7 +8,7 @@ SvelteKit (Svelte 5 runes) + Tailwind CSS v4 + bits-ui + Lucide アイコンで�
 
 - **3ペインのメイン画面** — 左: 入力 / 右: 出力 / 下: 直近履歴
 - **入力**: プロンプト・アスペクト比・メガピクセル・duration (既定 5)・steps (既定 4)・Latent Upscale (既定 Disable)。すべて localStorage に自動保存され、次回起動時に復元
-- **Latent Upscale**: ワークフロー内でバイパスされている `MiniMaxH3LatentUpscaleCombined` (`105:129`) の有効/無効を UI から切り替える（Enable = バイパス解除 / Disable = バイパス）。倍率 `scale_by` は 1.2〜1.5 (0.1 刻み)。有効にするとサンプラーの `latent_image` とガイダーの `conditioning` がこのノード経由に切り替わり、拡大したラテントで生成するぶん生成時間と VRAM 使用量が増える（結線は [reference/video_minimax_h3_t2v-upscale.json](reference/video_minimax_h3_t2v-upscale.json) と同じ）
+- **Latent Upscale**: ワークフロー内でバイパスされている `MiniMaxH3LatentUpscaleCombined` (`105:129`) の有効/無効を UI から切り替える（Enable = バイパス解除 / Disable = バイパス）。倍率 `scale_by` は 1.2〜1.5 (0.1 刻み)。有効にするとサンプラーの `latent_image` とガイダーの `conditioning` がこのノード経由に切り替わり、拡大したラテントで生成するぶん生成時間と VRAM 使用量が増える（結線は [reference/video_minimax_h3_t2v-upscale-api.json](reference/video_minimax_h3_t2v-upscale-api.json) と同じ）
 - アスペクト比とメガピクセルの選択肢は ComfyUI 本体の `/object_info` から取得するため、ワークフロー JSON と必ず一致（接続不可時はフォールバック選択肢）
 - **出力**: 生成された動画・最終的に実行されたプロンプトの日本語版（ランダムプロンプト整形後）・英語版・所要秒数
 - **履歴 / ライブラリ**: 直近履歴を下ペインに表示、`/library` で全履歴を検索・閲覧・削除。履歴はサーバー側の SQLite に保存 (開発: `data/dev.sqlite` / 本番: `data/prod.sqlite`)
@@ -34,6 +34,7 @@ SvelteKit (Svelte 5 runes) + Tailwind CSS v4 + bits-ui + Lucide アイコンで�
   - RunPod ワーカーは動画のみを返すため、最終プロンプト（日本語/英語）の表示は RunPod 生成では取得できない（履歴には入力プロンプトが表示される）
   - **コスト概算表示**: RunPod 生成には円/ドルのコストを表示（出力ペイン・モーダル・ライブラリカード、ライブラリのヘッダーには表示中の合計）。単価（既定 $1.10/hr）とドル円レート（既定 165円）は設定ダイアログで変更でき、既存の履歴にも即座に反映される。RunPod が返す実行時間（`executionTime` = 課金対象）で計算し、取得できない場合は実測の経過秒数で概算する
 - **ボスが来たモード**: 左上のロゴをクリックすると ON になり、すべての動画 (出力・履歴・ライブラリ・モーダル) がグレーのプレースホルダーになる。メニューの「生成」をクリックすると OFF。リロードしても状態は維持される
+- **デスクトップ通知**: 設定ダイアログの「デスクトップ通知」を ON にすると、生成完了・失敗時にブラウザ通知を出す(タブが非表示・非フォーカスのときのみ。バッチは1通に集約して件数表示)。ブラウザの通知 API はセキュアコンテキスト限定のため、https または localhost でのみ利用可能で、本番の http://ホスト名:3000 では設定項目が無効化される
 
 ## 起動 (開発)
 
@@ -51,27 +52,31 @@ http://localhost:5173 で開く。DB は `data/dev.sqlite` が使われる。
 ```sh
 npm ci
 npm run build
-node --env-file=.env build
+npm start
 ```
 
-RunPod を使わない場合は `node build` のままでよい。`.env` は `.env.example` をコピーして作成する。
+`npm start` は `node --env-file=.env start.js` を実行する ([start.js](start.js) は adapter-node の
+`build/` を起動する薄いラッパー)。`.env` は `.env.example` をコピーして作成する。
 
-http://localhost:3000 で起動する (`Listening on http://0.0.0.0:3000`)。
+http://localhost:3000 で起動する。待ち受けは従来どおり 0.0.0.0 (全インターフェース) なので
+LAN の他マシンから `http://ホスト名:3000` でアクセスできるが、起動ログはそのままでは
+クリックできない `0.0.0.0` を出すため、表示だけ `Listening on http://localhost:3000` に
+置き換えている。
 
 - **DB は `data/prod.sqlite`** が自動的に使われる (開発の `dev.sqlite` とは完全分離。
   初回起動時に自動作成される)。⚠️ 本番 DB には機密情報が載るため AI に読ませないこと
 - 環境変数:
-  - `PORT` — 待ち受けポート (既定 3000)。例: `PORT=8080 node build`
+  - `PORT` — 待ち受けポート (既定 3000)。例: `PORT=8080 npm start`
   - `HOST` — バインドアドレス (既定 0.0.0.0)
   - `VIDEO_GEN_DB_PATH` — DB ファイルパスの明示指定 (別ディレクトリから起動する場合は
     絶対パス推奨。未指定時は **カレントディレクトリ**の `data/` に作られるため、
-    必ずプロジェクトルートから `node build` を実行すること)
+    必ずプロジェクトルートから `npm start` を実行すること)
   - `ORIGIN` — リバースプロキシ配下などで公開 URL が異なる場合に指定
     (例: `ORIGIN=http://192.168.1.10:3000`)
 - 実行時にも `node_modules` が必要 (better-sqlite3 のネイティブモジュールのため、
   `build/` ディレクトリ単体では動かない)。別マシンへ配置する場合はプロジェクト一式を
   コピーして `npm ci --omit=dev` を実行する
-- コード更新時は `git pull && npm ci && npm run build` して `node build` を再起動
+- コード更新時は `git pull && npm ci && npm run build` して `npm start` を再起動
 
 ComfyUI 側には次のカスタムノードが必要:
 ResolutionSelector / DPRandomGenerator / GFDeepTranslate / M_ShowText / RestoreDialogTags / SpectrumApplyMiniMaxH3 ほか（ワークフロー JSON 参照）。
